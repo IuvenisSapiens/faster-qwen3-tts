@@ -63,7 +63,7 @@ If `setup_windows.bat` warns that CUDA is not available:
 2. Run `nvidia-smi` to check CUDA support.
 3. You may need to manually install the CUDA version of PyTorch:
    ```cmd
-   .venv\Scripts\pip install torch --index-url https://download.pytorch.org/whl/cu124
+   .venv\Scripts\pip install \"torch>=2.5.1\" --index-url https://download.pytorch.org/whl/cu124
    ```
 
 ### Python Not Found

@@ -4,11 +4,13 @@ Real-time Qwen3-TTS inference using CUDA graph capture. No Flash Attention, no v
 
 ## Install
 
-Requires: Python 3.10+, NVIDIA GPU with CUDA.
+Requires: Python 3.10+, PyTorch 2.5.1+, NVIDIA GPU with CUDA.
 
 ```bash
 pip install faster-qwen3-tts
 ```
+
+**PyTorch compatibility note:** CUDA-graph capture in the fast path is not reliable on `torch<=2.5.0` for this project (capture can fail with "operation not permitted when stream is capturing"). We validated `2.5.1+` as working and set that as the minimum supported version.
 
 ## Quick Start
 
