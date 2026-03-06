@@ -1100,15 +1100,15 @@ function updateModeRows() {
 // ── Arcade mode loader ─────────────────────────────────────────────────────────
 const ALL_MODE_MODELS = {
   voice_clone: [
-    { id: 'Qwen/Qwen3-TTS-12Hz-0.6B-Base',         name: '0.6B Base',         sub: 'Fastest · RTF ~4×' },
-    { id: 'Qwen/Qwen3-TTS-12Hz-1.7B-Base',         name: '1.7B Base',         sub: 'Higher quality · RTF ~3.5×' },
+    { id: 'models/Qwen3-TTS-12Hz-0.6B-Base',         name: '0.6B Base',         sub: 'Fastest · RTF ~4×' },
+    { id: 'models/Qwen3-TTS-12Hz-1.7B-Base',         name: '1.7B Base',         sub: 'Higher quality · RTF ~3.5×' },
   ],
   custom: [
-    { id: 'Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice',  name: '0.6B CustomVoice',  sub: 'Fastest' },
-    { id: 'Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice',  name: '1.7B CustomVoice',  sub: 'Higher quality' },
+    { id: 'models/Qwen3-TTS-12Hz-0.6B-CustomVoice',  name: '0.6B CustomVoice',  sub: 'Fastest' },
+    { id: 'models/Qwen3-TTS-12Hz-1.7B-CustomVoice',  name: '1.7B CustomVoice',  sub: 'Higher quality' },
   ],
   voice_design: [
-    { id: 'Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign',  name: '1.7B VoiceDesign',  sub: 'Describe any voice' },
+    { id: 'models/Qwen3-TTS-12Hz-1.7B-VoiceDesign',  name: '1.7B VoiceDesign',  sub: 'Describe any voice' },
   ],
 };
 // Filtered at runtime by available_models from /status
@@ -1558,15 +1558,15 @@ async function generate(mode) {
   const isCV = loadedModel?.includes('CustomVoice');
   if (mode === 'voice_design' && loadedModel && !isVD) {
     showMsg('warn', 'Voice design requires the 1.7B-VoiceDesign model.',
-      'Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign', mode); return;
+      'models/Qwen3-TTS-12Hz-1.7B-VoiceDesign', mode); return;
   }
   if (mode === 'custom' && loadedModel && !isCV) {
     showMsg('warn', 'Custom speaker requires a CustomVoice model.',
-      'Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice', mode); return;
+      'models/Qwen3-TTS-12Hz-1.7B-CustomVoice', mode); return;
   }
   if (mode === 'voice_clone' && loadedModel && (isVD || isCV)) {
     showMsg('warn', 'Voice clone needs a Base model.',
-      'Qwen/Qwen3-TTS-12Hz-0.6B-Base', mode); return;
+      'models/Qwen3-TTS-12Hz-0.6B-Base', mode); return;
   }
   if (mode === 'voice_clone' && !refFile && !presetRefId) {
     showMsg('err', 'Add reference audio first.');

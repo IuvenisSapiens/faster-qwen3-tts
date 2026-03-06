@@ -4,7 +4,7 @@ Faster Qwen3-TTS Demo Server
 
 Usage:
     python demo/server.py
-    python demo/server.py --model Qwen/Qwen3-TTS-12Hz-1.7B-Base --port 7860
+    python demo/server.py --model models/Qwen3-TTS-12Hz-1.7B-Base --port 7860
     python demo/server.py --no-preload  # skip startup model load
 """
 
@@ -27,6 +27,7 @@ import soundfile as sf
 import torch
 import torchaudio
 import uvicorn
+import re
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
@@ -41,15 +42,15 @@ except ImportError:
     print("Install with:  pip install -e .  (from the repo root)")
     sys.exit(1)
 
-from nano_parakeet import from_pretrained as _parakeet_from_pretrained
+from funasr import AutoModel # transcription model (SenseVoiceSmall via funasr)
 
 
 _ALL_MODELS = [
-    "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
-    "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
-    "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice",
-    "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
-    "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign",
+    "models/Qwen3-TTS-12Hz-0.6B-Base",
+    "models/Qwen3-TTS-12Hz-1.7B-Base",
+    "models/Qwen3-TTS-12Hz-0.6B-CustomVoice",
+    "models/Qwen3-TTS-12Hz-1.7B-CustomVoice",
+    "models/Qwen3-TTS-12Hz-1.7B-VoiceDesign",
 ]
 
 _active_models_env = os.environ.get("ACTIVE_MODELS", "")
@@ -62,7 +63,7 @@ else:
 BASE_DIR = Path(__file__).resolve().parent
 # Assets that need to be downloaded at runtime go to a writable directory.
 # /app is read-only in HF Spaces; fall back to /tmp.
-_ASSET_DIR = Path(os.environ.get("ASSET_DIR", "/tmp/faster-qwen3-tts-assets"))
+_ASSET_DIR = Path(os.environ.get("ASSET_DIR", BASE_DIR))
 PRESET_TRANSCRIPTS = _ASSET_DIR / "samples" / "parity" / "icl_transcripts.txt"
 PRESET_REFS = [
     ("ref_audio_3", _ASSET_DIR / "ref_audio_3.wav", "Clone 1"),
@@ -163,7 +164,39 @@ _active_model_name: str | None = None
 _loading = False
 _ref_cache: dict[str, str] = {}
 _ref_cache_lock = threading.Lock()
-_parakeet = None
+# ASR (Speech-to-text) model global
+_asr_model = None
+
+# helper wrapper around funasr predictor
+def prompt_wav_recognition(prompt_wav):
+    res = _asr_model.generate(
+        input=prompt_wav,
+        language="auto",  # "zn", "en", "yue", "ja", "ko", "nospeech"
+        use_itn=True,
+    )
+    text = res[0]["text"].split("|>")[-1]
+    return text
+
+
+# ─── Text utilities ──────────────────────────────────────────────────────────
+
+def split_text_into_segments(text, max_length=600):
+    """Helper function to split text into smaller segments at punctuation marks."""
+    # Use regular expression to find punctuation marks
+    segments = re.split(r'(?<=[。！？.!?])', text)
+    # Combine segments to ensure each is within max_length
+    combined_segments = []
+    current_segment = ''
+    for segment in segments:
+        if len(current_segment) + len(segment) > max_length:
+            combined_segments.append(current_segment)
+            current_segment = segment
+        else:
+            current_segment += segment
+    if current_segment:
+        combined_segments.append(current_segment)
+    combined_segments = list(filter(lambda x: len(x) > 0, combined_segments))
+    return combined_segments
 _generation_lock = asyncio.Lock()
 _generation_waiters: int = 0  # requests waiting for or holding the generation lock
 
@@ -224,8 +257,8 @@ async def root():
 
 @app.post("/transcribe")
 async def transcribe_audio(audio: UploadFile = File(...)):
-    """Transcribe reference audio using nano-parakeet."""
-    if _parakeet is None:
+    """Transcribe reference audio using SenseVoiceSmall (funasr)."""
+    if _asr_model is None:
         raise HTTPException(status_code=503, detail="Transcription model not loaded")
 
     content = await audio.read()
@@ -239,10 +272,24 @@ async def transcribe_audio(audio: UploadFile = File(...)):
         wav, sr = sf.read(io.BytesIO(content), dtype="float32", always_2d=False)
         if wav.ndim > 1:
             wav = wav.mean(axis=1)
-        wav_t = torch.from_numpy(wav)
+        # ensure 16 kHz sampling rate since ASR tends to expect it
         if sr != 16000:
-            wav_t = torchaudio.functional.resample(wav_t.unsqueeze(0), sr, 16000).squeeze(0)
-        return _parakeet.transcribe(wav_t.cuda())
+            wav = torchaudio.functional.resample(
+                torch.from_numpy(wav).unsqueeze(0), sr, 16000
+            ).squeeze(0).numpy()
+            sr = 16000
+        # write interim WAV file for funasr
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+            sf.write(tmp, wav, sr, format="WAV", subtype="PCM_16")
+            tmp_path = tmp.name
+        try:
+            text = prompt_wav_recognition(tmp_path)
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except Exception:
+                pass
+        return text
 
     text = await asyncio.to_thread(run)
     return {"text": text}
@@ -266,7 +313,7 @@ async def get_status():
         "available_models": AVAILABLE_MODELS,
         "model_type": model_type,
         "speakers": speakers,
-        "transcription_available": _parakeet is not None,
+        "transcription_available": _asr_model is not None,
         "preset_refs": [
             {"id": p["id"], "label": p["label"], "ref_text": p["ref_text"]}
             for p in _preset_refs.values()
@@ -388,44 +435,101 @@ async def generate_stream(
             total_audio_s = 0.0
             voice_clone_ms = 0.0
 
+            # split text when needed for all modes
+            segments = split_text_into_segments(text.strip())
             if mode == "voice_clone":
-                gen = model.generate_voice_clone_streaming(
-                    text=text,
-                    language=language,
-                    ref_audio=tmp_path,
-                    ref_text=ref_text,
-                    xvec_only=xvec_only,
-                    chunk_size=chunk_size,
-                    temperature=temperature,
-                    top_k=top_k,
-                    repetition_penalty=repetition_penalty,
-                    max_new_tokens=360,  # cap at 30s (12 Hz codec)
-                )
+                if len(segments) > 1:
+                    print(f"Voice clone streaming: split into {len(segments)} segments")
+                    def composite_gen():
+                        for idx, seg in enumerate(segments, start=1):
+                            print(f"Streaming voice_clone segment {idx}/{len(segments)}: {seg}")
+                            yield from model.generate_voice_clone_streaming(
+                                text=seg,
+                                language=language,
+                                ref_audio=tmp_path,
+                                ref_text=ref_text,
+                                xvec_only=xvec_only,
+                                chunk_size=chunk_size,
+                                temperature=temperature,
+                                top_k=top_k,
+                                repetition_penalty=repetition_penalty,
+                                max_new_tokens=2048,
+                            )
+                    gen = composite_gen()
+                else:
+                    gen = model.generate_voice_clone_streaming(
+                        text=text,
+                        language=language,
+                        ref_audio=tmp_path,
+                        ref_text=ref_text,
+                        xvec_only=xvec_only,
+                        chunk_size=chunk_size,
+                        temperature=temperature,
+                        top_k=top_k,
+                        repetition_penalty=repetition_penalty,
+                        max_new_tokens=2048,  # cap at 30s (12 Hz codec)
+                    )
             elif mode == "custom":
                 if not speaker:
                     raise ValueError("Speaker ID is required for custom voice")
-                gen = model.generate_custom_voice_streaming(
-                    text=text,
-                    speaker=speaker,
-                    language=language,
-                    instruct=instruct,
-                    chunk_size=chunk_size,
-                    temperature=temperature,
-                    top_k=top_k,
-                    repetition_penalty=repetition_penalty,
-                    max_new_tokens=360,
-                )
+                if len(segments) > 1:
+                    print(f"Custom voice streaming: split into {len(segments)} segments")
+                    def composite_gen():
+                        for idx, seg in enumerate(segments, start=1):
+                            print(f"Streaming custom segment {idx}/{len(segments)}: {seg}")
+                            yield from model.generate_custom_voice_streaming(
+                                text=seg,
+                                speaker=speaker,
+                                language=language,
+                                instruct=instruct,
+                                chunk_size=chunk_size,
+                                temperature=temperature,
+                                top_k=top_k,
+                                repetition_penalty=repetition_penalty,
+                                max_new_tokens=2048,
+                            )
+                    gen = composite_gen()
+                else:
+                    gen = model.generate_custom_voice_streaming(
+                        text=text,
+                        speaker=speaker,
+                        language=language,
+                        instruct=instruct,
+                        chunk_size=chunk_size,
+                        temperature=temperature,
+                        top_k=top_k,
+                        repetition_penalty=repetition_penalty,
+                        max_new_tokens=2048,
+                    )
             else:
-                gen = model.generate_voice_design_streaming(
-                    text=text,
-                    instruct=instruct,
-                    language=language,
-                    chunk_size=chunk_size,
-                    temperature=temperature,
-                    top_k=top_k,
-                    repetition_penalty=repetition_penalty,
-                    max_new_tokens=360,
-                )
+                if len(segments) > 1:
+                    print(f"Voice design streaming: split into {len(segments)} segments")
+                    def composite_gen():
+                        for idx, seg in enumerate(segments, start=1):
+                            print(f"Streaming segment {idx}/{len(segments)}: {seg}")
+                            for item in model.generate_voice_design_streaming(
+                                text=seg,
+                                instruct=instruct,
+                                language=language,
+                                chunk_size=chunk_size,
+                                temperature=temperature,
+                                top_k=top_k,
+                                repetition_penalty=repetition_penalty,
+                                max_new_tokens=2048,
+                            ):
+                                yield item
+                    gen = composite_gen()
+                else:
+                    gen = model.generate_voice_design_streaming(
+                        text=text,
+                        instruct=instruct,
+                        language=language,
+                        chunk_size=chunk_size,
+                        temperature=temperature,
+                        top_k=top_k,
+                        repetition_penalty=repetition_penalty,
+                        max_new_tokens=2048,
+                    )
 
             # Use timing data from the generator itself (measured after voice-clone
             # encoding, so TTFA and RTF reflect pure LLM generation latency).
@@ -591,41 +695,110 @@ async def generate_non_streaming(
         if model is None:
             raise RuntimeError("No model loaded. Please load a model first.")
         t0 = time.perf_counter()
+        # break text into segments for every mode to avoid generation timeouts
+        segments = split_text_into_segments(text.strip())
         if mode == "voice_clone":
-            audio_list, sr = model.generate_voice_clone(
-                text=text,
-                language=language,
-                ref_audio=tmp_path,
-                ref_text=ref_text,
-                xvec_only=xvec_only,
-                temperature=temperature,
-                top_k=top_k,
-                repetition_penalty=repetition_penalty,
-                max_new_tokens=360,  # cap at 30s (12 Hz codec)
-            )
+            if len(segments) > 1:
+                print(f"Generating voice clone for {len(segments)} segments...")
+                results = []
+                for seg in segments:
+                    print(f"Generating voice clone segment: {seg}...")
+                    wavs, seg_sr = model.generate_voice_clone(
+                        text=seg,
+                        language=language,
+                        ref_audio=tmp_path,
+                        ref_text=ref_text,
+                        xvec_only=xvec_only,
+                        temperature=temperature,
+                        top_k=top_k,
+                        repetition_penalty=repetition_penalty,
+                        max_new_tokens=2048,  # cap at 30s (12 Hz codec)
+                    )
+                    if isinstance(wavs, (list, tuple)) and len(wavs) > 0:
+                        results.append(wavs[0])
+                    else:
+                        results.append(wavs)
+                audio_list = results
+                sr = seg_sr
+            else:
+                audio_list, sr = model.generate_voice_clone(
+                    text=text,
+                    language=language,
+                    ref_audio=tmp_path,
+                    ref_text=ref_text,
+                    xvec_only=xvec_only,
+                    temperature=temperature,
+                    top_k=top_k,
+                    repetition_penalty=repetition_penalty,
+                    max_new_tokens=2048,  # cap at 30s (12 Hz codec)
+                )
         elif mode == "custom":
             if not speaker:
                 raise ValueError("Speaker ID is required for custom voice")
-            audio_list, sr = model.generate_custom_voice(
-                text=text,
-                speaker=speaker,
-                language=language,
-                instruct=instruct,
-                temperature=temperature,
-                top_k=top_k,
-                repetition_penalty=repetition_penalty,
-                max_new_tokens=360,
-            )
+            if len(segments) > 1:
+                print(f"Generating custom voice for {len(segments)} segments...")
+                results = []
+                for seg in segments:
+                    print(f"Generating custom segment: {seg}...")
+                    wavs, seg_sr = model.generate_custom_voice(
+                        text=seg,
+                        speaker=speaker,
+                        language=language,
+                        instruct=instruct,
+                        temperature=temperature,
+                        top_k=top_k,
+                        repetition_penalty=repetition_penalty,
+                        max_new_tokens=2048,
+                    )
+                    if isinstance(wavs, (list, tuple)) and len(wavs) > 0:
+                        results.append(wavs[0])
+                    else:
+                        results.append(wavs)
+                audio_list = results
+                sr = seg_sr
+            else:
+                audio_list, sr = model.generate_custom_voice(
+                    text=text,
+                    speaker=speaker,
+                    language=language,
+                    instruct=instruct,
+                    temperature=temperature,
+                    top_k=top_k,
+                    repetition_penalty=repetition_penalty,
+                    max_new_tokens=2048,
+                )
         else:
-            audio_list, sr = model.generate_voice_design(
-                text=text,
-                instruct=instruct,
-                language=language,
-                temperature=temperature,
-                top_k=top_k,
-                repetition_penalty=repetition_penalty,
-                max_new_tokens=360,
-            )
+            # voice_design branch
+            if len(segments) > 1:
+                print(f"Generating voice design for {len(segments)} segments...")
+                results = []
+                for seg in segments:
+                    print(f"Generating voice design for segment: {seg}...")
+                    wavs, seg_sr = model.generate_voice_design(
+                        text=seg,
+                        instruct=instruct,
+                        language=language,
+                        temperature=temperature,
+                        top_k=top_k,
+                        repetition_penalty=repetition_penalty,
+                        max_new_tokens=2048,
+                    )
+                    if isinstance(wavs, (list, tuple)) and len(wavs) > 0:
+                        results.append(wavs[0])
+                    else:
+                        results.append(wavs)
+                audio_list = results
+                sr = seg_sr
+            else:
+                audio_list, sr = model.generate_voice_design(
+                    text=text,
+                    instruct=instruct,
+                    language=language,
+                    temperature=temperature,
+                    top_k=top_k,
+                    repetition_penalty=repetition_penalty,
+                    max_new_tokens=2048,
+                )
         elapsed = time.perf_counter() - t0
         audio = _concat_audio(audio_list)
         dur = len(audio) / sr
@@ -664,7 +837,11 @@ def main():
     parser = argparse.ArgumentParser(description="Faster Qwen3-TTS Demo Server")
     parser.add_argument(
         "--model",
-        default="Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+        default="models/Qwen3-TTS-12Hz-1.7B-Base",
+        # default="models/Qwen3-TTS-12Hz-0.6B-Base",
+        # default="models/Qwen3-TTS-12Hz-1.7B-CustomVoice",
+        # default="models/Qwen3-TTS-12Hz-0.6B-CustomVoice",
+        # default="models/Qwen3-TTS-12Hz-1.7B-VoiceDesign",
         help="Model to preload at startup (default: 1.7B-Base)",
     )
     parser.add_argument("--port", type=int, default=int(os.environ.get("PORT", 7860)))
@@ -677,7 +854,7 @@ def main():
     args = parser.parse_args()
 
     if not args.no_preload:
-        global _active_model_name, _parakeet
+        global _active_model_name, _asr_model
         print(f"Loading model: {args.model}")
         _startup_model = FasterQwen3TTS.from_pretrained(
             args.model,
@@ -690,9 +867,14 @@ def main():
         _active_model_name = args.model
         _prime_preset_voice_cache(_startup_model)
         print("TTS model ready.")
-
-        print("Loading transcription model (nano-parakeet)…")
-        _parakeet = _parakeet_from_pretrained(device="cuda")
+        
+        print("Loading transcription model (SenseVoiceSmall)...")
+        _asr_model = AutoModel(
+            model="models/SenseVoiceSmall",
+            disable_update=True,
+            log_level="DEBUG",
+            device="cuda:0",
+        )
         print("Transcription model ready.")
 
         print(f"Ready. Open http://localhost:{args.port}")
