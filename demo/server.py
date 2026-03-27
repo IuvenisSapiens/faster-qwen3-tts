@@ -245,6 +245,10 @@ def _get_cached_ref_path(content: bytes) -> str:
         return str(path)
 
 
+def _default_non_streaming_mode_for_mode(mode: str) -> bool:
+    return mode != "voice_clone"
+
+
 # ─── Routes ───────────────────────────────────────────────────────────────────
 
 _fetch_preset_assets()
@@ -389,6 +393,7 @@ async def generate_stream(
     temperature: float = Form(0.9),
     top_k: int = Form(50),
     repetition_penalty: float = Form(1.05),
+    non_streaming_mode: bool | None = Form(None),
     ref_preset: str = Form(""),
     ref_audio: UploadFile = File(None),
 ):
@@ -418,6 +423,9 @@ async def generate_stream(
             )
         tmp_path = _get_cached_ref_path(content)
         tmp_is_cached = True
+
+    if non_streaming_mode is None:
+        non_streaming_mode = _default_non_streaming_mode_for_mode(mode)
 
     loop = asyncio.get_event_loop()
     queue: asyncio.Queue[str | None] = asyncio.Queue()
@@ -449,6 +457,7 @@ async def generate_stream(
                                 ref_audio=tmp_path,
                                 ref_text=ref_text,
                                 xvec_only=xvec_only,
+                                non_streaming_mode=non_streaming_mode,
                                 chunk_size=chunk_size,
                                 temperature=temperature,
                                 top_k=top_k,
@@ -463,6 +472,7 @@ async def generate_stream(
                         ref_audio=tmp_path,
                         ref_text=ref_text,
                         xvec_only=xvec_only,
+                        non_streaming_mode=non_streaming_mode,
                         chunk_size=chunk_size,
                         temperature=temperature,
                         top_k=top_k,
@@ -482,6 +492,7 @@ async def generate_stream(
                                 speaker=speaker,
                                 language=language,
                                 instruct=instruct,
+                                non_streaming_mode=non_streaming_mode,
                                 chunk_size=chunk_size,
                                 temperature=temperature,
                                 top_k=top_k,
@@ -495,6 +506,7 @@ async def generate_stream(
                         speaker=speaker,
                         language=language,
                         instruct=instruct,
+                        non_streaming_mode=non_streaming_mode,
                         chunk_size=chunk_size,
                         temperature=temperature,
                         top_k=top_k,
@@ -511,6 +523,7 @@ async def generate_stream(
                                 text=seg,
                                 instruct=instruct,
                                 language=language,
+                                non_streaming_mode=non_streaming_mode,
                                 chunk_size=chunk_size,
                                 temperature=temperature,
                                 top_k=top_k,
@@ -524,6 +537,7 @@ async def generate_stream(
                         text=text,
                         instruct=instruct,
                         language=language,
+                        non_streaming_mode=non_streaming_mode,
                         chunk_size=chunk_size,
                         temperature=temperature,
                         top_k=top_k,
@@ -659,6 +673,7 @@ async def generate_non_streaming(
     temperature: float = Form(0.9),
     top_k: int = Form(50),
     repetition_penalty: float = Form(1.05),
+    non_streaming_mode: bool | None = Form(None),
     ref_preset: str = Form(""),
     ref_audio: UploadFile = File(None),
 ):
@@ -689,6 +704,9 @@ async def generate_non_streaming(
         tmp_path = _get_cached_ref_path(content)
         tmp_is_cached = True
 
+    if non_streaming_mode is None:
+        non_streaming_mode = _default_non_streaming_mode_for_mode(mode)
+
     def run():
         # Resolve the model after the generation lock is held.
         model = _model_cache.get(_active_model_name)
@@ -709,6 +727,7 @@ async def generate_non_streaming(
                         ref_audio=tmp_path,
                         ref_text=ref_text,
                         xvec_only=xvec_only,
+                        non_streaming_mode=non_streaming_mode,
                         temperature=temperature,
                         top_k=top_k,
                         repetition_penalty=repetition_penalty,
@@ -727,6 +746,7 @@ async def generate_non_streaming(
                     ref_audio=tmp_path,
                     ref_text=ref_text,
                     xvec_only=xvec_only,
+                    non_streaming_mode=non_streaming_mode,
                     temperature=temperature,
                     top_k=top_k,
                     repetition_penalty=repetition_penalty,
@@ -745,6 +765,7 @@ async def generate_non_streaming(
                         speaker=speaker,
                         language=language,
                         instruct=instruct,
+                        non_streaming_mode=non_streaming_mode,
                         temperature=temperature,
                         top_k=top_k,
                         repetition_penalty=repetition_penalty,
@@ -762,6 +783,7 @@ async def generate_non_streaming(
                     speaker=speaker,
                     language=language,
                     instruct=instruct,
+                    non_streaming_mode=non_streaming_mode,
                     temperature=temperature,
                     top_k=top_k,
                     repetition_penalty=repetition_penalty,
@@ -778,6 +800,7 @@ async def generate_non_streaming(
                         text=seg,
                         instruct=instruct,
                         language=language,
+                        non_streaming_mode=non_streaming_mode,
                         temperature=temperature,
                         top_k=top_k,
                         repetition_penalty=repetition_penalty,
@@ -794,6 +817,7 @@ async def generate_non_streaming(
                     text=text,
                     instruct=instruct,
                     language=language,
+                    non_streaming_mode=non_streaming_mode,
                     temperature=temperature,
                     top_k=top_k,
                     repetition_penalty=repetition_penalty,
