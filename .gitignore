@@ -9,3 +9,5 @@ __pycache__/
 transformers/
 huggingface_hub/
 qwen_tts/
+funasr/
+faster_qwen3_tts.egg-info/
