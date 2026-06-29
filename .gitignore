@@ -11,3 +11,6 @@ huggingface_hub/
 qwen_tts/
 funasr/
 faster_qwen3_tts.egg-info/
+outputs/
+artifacts/
+packages/qwentts_cpp_python/
