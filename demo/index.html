@@ -1158,8 +1158,8 @@ function renderUser(user, usage) {
     return;
   }
   currentUsage = usage || null;
-  const quota = usage?.is_pro
-    ? 'PRO'
+  const quota = usage?.unlimited
+    ? (usage?.tier === 'pro' ? 'PRO' : 'TEAM')
     : `${Math.max(0, usage?.remaining ?? 0)} left`;
   pill.textContent = `${user.username || 'HF user'} · ${quota}`;
   pill.classList.add('show');
