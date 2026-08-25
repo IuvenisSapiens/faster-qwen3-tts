@@ -28,7 +28,7 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/b
     && uv venv --python 3.10 --seed "$VIRTUAL_ENV" \
     && "$VIRTUAL_ENV/bin/python" -m pip install --upgrade pip \
     && "$VIRTUAL_ENV/bin/python" -m pip install --index-url https://download.pytorch.org/whl/cu128 torch torchaudio \
-    && "$VIRTUAL_ENV/bin/python" -m pip install -c constraints.txt "faster-qwen3-tts[demo,ggml] @ git+https://github.com/andimarafioti/faster-qwen3-tts.git@c8e32fb603fa20a5731895a1d7c9f241d4ccf822" \
+    && "$VIRTUAL_ENV/bin/python" -m pip install -c constraints.txt "faster-qwen3-tts[demo,ggml]==0.4.0" \
     && "$VIRTUAL_ENV/bin/python" -m pip install -c constraints.txt -r requirements.txt
 
 EXPOSE 7860
