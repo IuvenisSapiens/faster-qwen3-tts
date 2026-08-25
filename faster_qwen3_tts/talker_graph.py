@@ -15,7 +15,6 @@ Strategy:
 """
 import torch
 from transformers import StaticCache
-from transformers.masking_utils import create_causal_mask, create_sliding_window_causal_mask
 
 
 class TalkerGraph:
@@ -66,25 +65,27 @@ class TalkerGraph:
         dummy_k = torch.zeros(1, num_kv_heads, 1, head_dim, dtype=self.dtype, device=self.device)
         for layer in self.static_cache.layers:
             if not layer.is_initialized:
-                layer.lazy_initialization(dummy_k)
+                layer.lazy_initialization(dummy_k, dummy_k)
 
     def _build_attention_masks(self, attention_mask: torch.Tensor | None = None):
-        dummy = torch.zeros(1, 1, self.hidden_size, dtype=self.dtype, device=self.device)
         max_len = self.max_seq_len
         self.attn_mask_table = [None] * max_len
-
-        mask_fn = create_causal_mask if self.model.config.sliding_window is None else create_sliding_window_causal_mask
+        key_positions = torch.arange(max_len, device=self.device)
+        min_value = torch.finfo(self.dtype).min
+        padding = None if attention_mask is None else attention_mask.to(torch.bool)
+        sliding_window = self.model.config.sliding_window
 
         for i in range(max_len):
-            pos = torch.tensor([i], device=self.device)
-            full = mask_fn(
-                config=self.model.config,
-                input_embeds=dummy,
-                attention_mask=attention_mask,
-                cache_position=pos,
-                past_key_values=self.static_cache,
+            allowed = key_positions <= i
+            if sliding_window is not None:
+                allowed = allowed & (key_positions > i - sliding_window)
+            allowed = allowed.unsqueeze(0) if padding is None else allowed.unsqueeze(0) & padding
+            full = torch.where(
+                allowed,
+                torch.zeros((), dtype=self.dtype, device=self.device),
+                torch.full((), min_value, dtype=self.dtype, device=self.device),
             )
-            self.attn_mask_table[i] = full
+            self.attn_mask_table[i] = full.unsqueeze(1).unsqueeze(1)
 
         if self.attn_mask is None:
             self.attn_mask = self.attn_mask_table[0].clone()
@@ -158,7 +159,8 @@ class TalkerGraph:
         self.static_cache.reset()
         seq_len = 0
         for li in range(self.num_layers):
-            k, v = past_key_values[li]  # each [1, kv_heads, seq_len, head_dim]
+            layer = past_key_values.layers[li]
+            k, v = layer.keys, layer.values  # each [1, kv_heads, seq_len, head_dim]
             seq_len = k.shape[2]
             if seq_len > self.max_seq_len:
                 raise RuntimeError(

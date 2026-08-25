@@ -27,12 +27,12 @@ classifiers = [
 ]
 requires-python = ">=3.10"
 dependencies = [
-    "qwen-tts>=0.1.1",
-    "transformers>=4.57,<5",
+    "qwen-tts @ git+https://github.com/andimarafioti/Qwen3-TTS.git@00969daa8064e23adc9e5f52cdf20cf247f94159",
+    "transformers>=5.15.1,<6",
     "torch>=2.5.1",
     "numpy",
     "soundfile",
-    "huggingface-hub>=0.36.0,<1.0",
+    "huggingface-hub>=1.5.0,<2.0",
 ]
 
 [project.optional-dependencies]
@@ -43,7 +43,7 @@ demo = [
     "fastapi>=0.100.0",
     "uvicorn[standard]>=0.24.0",
     "python-multipart>=0.0.7",
-    "huggingface-hub[oauth]>=0.36.0,<1.0",
+    "huggingface-hub[oauth]>=1.5.0,<2.0",
 ]
 
 [project.scripts]

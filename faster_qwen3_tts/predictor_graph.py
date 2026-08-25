@@ -15,7 +15,6 @@ Strategy:
 """
 import torch
 from transformers import StaticCache
-from transformers.masking_utils import create_causal_mask, create_sliding_window_causal_mask
 
 from .sampling import sample_logits
 
@@ -83,24 +82,25 @@ class PredictorGraph:
         dummy_k = torch.zeros(1, num_kv_heads, 1, head_dim, dtype=self.dtype, device=self.device)
         for layer in self.static_cache.layers:
             if not layer.is_initialized:
-                layer.lazy_initialization(dummy_k)
+                layer.lazy_initialization(dummy_k, dummy_k)
 
     def _make_attn_mask(self, input_embeds: torch.Tensor, cache_position: torch.Tensor):
-        mask = create_causal_mask(
-            config=self.pred_model.config,
-            input_embeds=input_embeds,
-            attention_mask=None,
-            cache_position=cache_position,
-            past_key_values=self.static_cache,
-        )
+        key_positions = torch.arange(self.max_seq, device=self.device)
+        allowed = key_positions.unsqueeze(0) <= cache_position.unsqueeze(1)
+        min_value = torch.finfo(input_embeds.dtype).min
+        mask = torch.where(
+            allowed,
+            torch.zeros((), dtype=input_embeds.dtype, device=self.device),
+            torch.full((), min_value, dtype=input_embeds.dtype, device=self.device),
+        ).unsqueeze(0).unsqueeze(0)
         if self.has_sliding_layers:
-            sliding = create_sliding_window_causal_mask(
-                config=self.pred_model.config,
-                input_embeds=input_embeds,
-                attention_mask=None,
-                cache_position=cache_position,
-                past_key_values=self.static_cache,
-            )
+            window = self.pred_model.config.sliding_window
+            in_window = key_positions.unsqueeze(0) > (cache_position.unsqueeze(1) - window)
+            sliding = torch.where(
+                allowed & in_window,
+                torch.zeros((), dtype=input_embeds.dtype, device=self.device),
+                torch.full((), min_value, dtype=input_embeds.dtype, device=self.device),
+            ).unsqueeze(0).unsqueeze(0)
             return {"full_attention": mask, "sliding_attention": sliding}
         return {"full_attention": mask}
 
