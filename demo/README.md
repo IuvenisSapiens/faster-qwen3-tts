@@ -43,9 +43,12 @@ Local launches default to an open demo with no login requirement. The Space
 Docker image sets `DEMO_WEB_ONLY=1` and `DEMO_REQUIRE_LOGIN=1`, and the Space
 enables Hugging Face OAuth via `hf_oauth: true`. In that mode, users must sign
 in before the app UI or API routes are usable. Generation requests are tracked
-by an HMAC of the user's stable Hugging Face OAuth ID: non-PRO users get
-`DEMO_DAILY_FREE_REQUESTS` generations per UTC day, while PRO users are not
-limited. The raw OAuth ID is not stored. For admin visibility, the database
+by an HMAC of the user's stable Hugging Face OAuth ID: free users get
+`DEMO_DAILY_FREE_REQUESTS` generations per UTC day, while PRO users and members
+of allow-listed Hugging Face organizations are not limited. `HuggingFaceM4` is
+allow-listed by default. The raw OAuth ID and OAuth access token are not written
+to the quota database; only a hash of the token is used as the in-memory
+profile-cache key. For admin visibility, the database
 also keeps a `usage_users` table mapping each HMAC user key to the latest
 observed Hugging Face username and PRO status.
 
@@ -67,7 +70,8 @@ DEMO_REQUIRE_LOGIN=0             # default locally; set to 1 to require OAuth
 DEMO_WEB_TOKEN_TTL_SECONDS=7200  # token lifetime
 DEMO_WEB_GATE_SECRET=...         # optional stable signing secret
 DEMO_USAGE_HASH_SECRET=...       # stable Space Secret for pseudonymous quota IDs
-DEMO_DAILY_FREE_REQUESTS=10      # non-PRO daily generation limit
+DEMO_DAILY_FREE_REQUESTS=10      # free-user daily generation limit
+DEMO_UNLIMITED_ORGS=my-team      # add orgs whose members have unlimited usage
 DEMO_DEFAULT_BACKEND=ggml        # ggml or torch
 DEMO_AVAILABLE_BACKENDS=ggml,torch
 DEMO_GGML_QUANT=BF16

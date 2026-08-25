@@ -46,6 +46,8 @@ except ImportError:
     print("Install with:  pip install -e .  (from the repo root)")
     sys.exit(1)
 
+from entitlements import Entitlement, resolve_entitlement
+
 try:
     from huggingface_hub import attach_huggingface_oauth, parse_huggingface_oauth
 except ImportError:
@@ -349,10 +351,6 @@ def _user_name(user) -> str:
     return str(getattr(user, "preferred_username", None) or getattr(user, "name", None) or _user_sub(user))
 
 
-def _is_pro_user(user) -> bool:
-    return bool(getattr(user, "is_pro", False))
-
-
 async def require_authenticated_user(request: Request):
     if not REQUIRE_LOGIN:
         return None
@@ -519,57 +517,62 @@ def _record_usage_user(
         )
 
 
-def _usage_payload_for_count(user, day: str, count: int) -> dict:
-    is_pro = _is_pro_user(user)
-    limit = None if is_pro else DAILY_FREE_REQUESTS
-    remaining = None if is_pro else max(0, DAILY_FREE_REQUESTS - count)
+def _usage_payload_for_count(entitlement: Entitlement, day: str, count: int) -> dict:
+    limit = None if entitlement.unlimited else DAILY_FREE_REQUESTS
+    remaining = None if entitlement.unlimited else max(0, DAILY_FREE_REQUESTS - count)
     return {
         "day": day,
         "used_today": count,
         "limit": limit,
         "remaining": remaining,
-        "is_pro": is_pro,
+        "tier": entitlement.tier,
+        "unlimited": entitlement.unlimited,
+        "is_pro": entitlement.is_pro,
+        "is_team_member": entitlement.is_team_member,
     }
 
 
-def _get_usage(oauth_info) -> dict:
+def _get_usage(oauth_info, entitlement: Entitlement | None = None) -> dict:
     user = _oauth_user(oauth_info)
+    entitlement = entitlement or resolve_entitlement(oauth_info)
     day = _today_key()
     user_key = _user_key(user)
-    is_pro = _is_pro_user(user)
     now = int(time.time())
     with _usage_lock:
         _ensure_usage_db_locked()
         with sqlite3.connect(USAGE_DB_PATH, timeout=30) as con:
-            _record_usage_user(con, user_key, _user_name(user), is_pro, now)
+            _record_usage_user(con, user_key, _user_name(user), entitlement.is_pro, now)
             row = con.execute(
                 "SELECT count FROM usage_daily WHERE user_key = ? AND day = ?",
                 (user_key, day),
             ).fetchone()
     count = int(row[0]) if row else 0
-    return _usage_payload_for_count(user, day, count)
+    return _usage_payload_for_count(entitlement, day, count)
 
 
 def _consume_generation_quota(oauth_info) -> dict:
     user = _oauth_user(oauth_info)
+    entitlement = resolve_entitlement(oauth_info)
     day = _today_key()
     user_key = _user_key(user)
-    is_pro = _is_pro_user(user)
     now = int(time.time())
 
     with _usage_lock:
         _ensure_usage_db_locked()
         with sqlite3.connect(USAGE_DB_PATH, timeout=30) as con:
-            _record_usage_user(con, user_key, _user_name(user), is_pro, now)
+            _record_usage_user(con, user_key, _user_name(user), entitlement.is_pro, now)
             row = con.execute(
                 "SELECT count FROM usage_daily WHERE user_key = ? AND day = ?",
                 (user_key, day),
             ).fetchone()
             count = int(row[0]) if row else 0
-            if not is_pro and count >= DAILY_FREE_REQUESTS:
+            if not entitlement.unlimited and count >= DAILY_FREE_REQUESTS:
                 raise HTTPException(
                     status_code=429,
-                    detail=f"Daily free limit reached ({DAILY_FREE_REQUESTS} generations/day). Hugging Face PRO users have unlimited access.",
+                    detail=(
+                        f"Daily free limit reached ({DAILY_FREE_REQUESTS} generations/day). "
+                        "Hugging Face PRO users and HuggingFaceM4 team members have unlimited access."
+                    ),
                 )
 
             count += 1
@@ -582,17 +585,20 @@ def _consume_generation_quota(oauth_info) -> dict:
                     count = excluded.count,
                     updated_at = excluded.updated_at
                 """,
-                (user_key, day, 1 if is_pro else 0, count, now),
+                (user_key, day, 1 if entitlement.is_pro else 0, count, now),
             )
 
-    return _usage_payload_for_count(user, day, count)
+    return _usage_payload_for_count(entitlement, day, count)
 
 
-def _user_payload(oauth_info) -> dict:
+def _user_payload(oauth_info, entitlement: Entitlement | None = None) -> dict:
     user = _oauth_user(oauth_info)
+    entitlement = entitlement or resolve_entitlement(oauth_info)
     return {
         "username": _user_name(user),
-        "is_pro": _is_pro_user(user),
+        "tier": entitlement.tier,
+        "is_pro": entitlement.is_pro,
+        "is_team_member": entitlement.is_team_member,
     }
 
 
@@ -840,8 +846,9 @@ async def get_status(oauth_info = Depends(require_authenticated_user)):
                 speakers = active.model.get_supported_speakers() or []
         except Exception:
             speakers = []
-    user_payload = _user_payload(oauth_info) if REQUIRE_LOGIN else None
-    usage_payload = _get_usage(oauth_info) if REQUIRE_LOGIN else None
+    entitlement = resolve_entitlement(oauth_info) if REQUIRE_LOGIN else None
+    user_payload = _user_payload(oauth_info, entitlement) if REQUIRE_LOGIN else None
+    usage_payload = _get_usage(oauth_info, entitlement) if REQUIRE_LOGIN else None
     return {
         "loaded": active is not None,
         "model": active_model_name,
