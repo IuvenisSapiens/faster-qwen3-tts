@@ -10,6 +10,11 @@ Requires: Python 3.10+, PyTorch 2.5.1+, NVIDIA GPU with CUDA.
 pip install faster-qwen3-tts
 ```
 
+The default install uses `qwen-tts-hf`, a temporary PyPI compatibility build
+of Qwen3-TTS with Transformers 5 support. It provides the same `qwen_tts`
+Python package as upstream `qwen-tts`; do not install both distributions in
+the same environment.
+
 **PyTorch compatibility note:** CUDA-graph capture in the fast path is not reliable on `torch<=2.5.0` for this project (capture can fail with "operation not permitted when stream is capturing"). We validated `2.5.1+` as working and set that as the minimum supported version.
 
 **Blackwell note:** RTX 50xx / Blackwell GPUs need CUDA 12.8 PyTorch wheels. If the default setup fails on those cards, install a `cu128` PyTorch build (PyTorch 2.7+).

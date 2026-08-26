@@ -84,6 +84,7 @@ body {
   padding: 1px 6px; border-radius: 100px;
 }
 .spacer { flex: 1; }
+.account { position: relative; flex-shrink: 0; }
 .mpill {
   display: flex; align-items: center; gap: 5px;
   font-size: 11px; color: var(--dim);
@@ -95,14 +96,30 @@ body {
 .mpill:hover { border-color: var(--border2); }
 .upill {
   display: none; align-items: center; min-width: 0; max-width: 150px;
-  font-size: 11px; color: var(--text2); text-decoration: none;
+  font-family: inherit; font-size: 11px; color: var(--text2); text-decoration: none;
   padding: 4px 9px;
   background: var(--surface); border: 1px solid var(--border);
   border-radius: 20px; overflow: hidden; white-space: nowrap;
-  text-overflow: ellipsis;
+  text-overflow: ellipsis; cursor: pointer;
 }
 .upill.show { display: flex; }
 .upill:hover { border-color: var(--border2); color: var(--text); }
+.account-menu {
+  position: absolute; z-index: 30; top: calc(100% + 7px); right: 0;
+  min-width: 180px; padding: 7px;
+  background: var(--surface); border: 1px solid var(--border2);
+  border-radius: 10px; box-shadow: 0 12px 32px rgba(0,0,0,0.28);
+}
+.account-menu[hidden] { display: none; }
+.account-summary {
+  padding: 7px 9px 9px; color: var(--dim); font-size: 11px;
+  border-bottom: 1px solid var(--border); margin-bottom: 5px;
+}
+.account-action {
+  display: block; padding: 7px 9px; border-radius: 6px;
+  color: var(--text2); text-decoration: none; font-size: 12px;
+}
+.account-action:hover { background: var(--surface2); color: var(--text); }
 .mdot {
   width: 6px; height: 6px; border-radius: 50%;
   background: var(--dimmer); flex-shrink: 0;
@@ -658,7 +675,13 @@ body {
     <h1>faster-qwen3-tts</h1>
     <span class="badge" id="backendBadge">GGML</span>
     <span class="spacer"></span>
-    <a class="upill" id="userPill" href="/oauth/huggingface/logout" title="Logout"></a>
+    <div class="account" id="accountMenuRoot">
+      <button class="upill" id="userPill" type="button" aria-haspopup="true" aria-expanded="false" onclick="toggleAccountMenu(event)"></button>
+      <div class="account-menu" id="accountMenu" hidden>
+        <div class="account-summary" id="accountSummary"></div>
+        <a class="account-action" id="accountSignOut" href="/oauth/huggingface/logout">Sign out</a>
+      </div>
+    </div>
     <button class="mpill" onclick="openSettings()" title="Settings">
       <span class="mdot" id="mdot"></span>
       <span id="mtext">not loaded</span>
@@ -1153,17 +1176,40 @@ async function fetchStatus() {
 function renderUser(user, usage) {
   const pill = $('userPill');
   if (!user) {
+    closeAccountMenu();
     pill.classList.remove('show');
     pill.textContent = '';
     return;
   }
   currentUsage = usage || null;
-  const quota = usage?.is_pro
-    ? 'PRO'
+  const quota = usage?.unlimited
+    ? (usage?.tier === 'pro' ? 'PRO' : 'TEAM')
     : `${Math.max(0, usage?.remaining ?? 0)} left`;
   pill.textContent = `${user.username || 'HF user'} · ${quota}`;
+  $('accountSummary').textContent = usage?.unlimited
+    ? `${quota} · Unlimited generations`
+    : `Free · ${Math.max(0, usage?.remaining ?? 0)} generations left today`;
   pill.classList.add('show');
 }
+
+function toggleAccountMenu(event) {
+  event.stopPropagation();
+  const menu = $('accountMenu');
+  const open = menu.hidden;
+  menu.hidden = !open;
+  $('userPill').setAttribute('aria-expanded', String(open));
+}
+
+function closeAccountMenu() {
+  const menu = $('accountMenu');
+  if (!menu) return;
+  menu.hidden = true;
+  $('userPill').setAttribute('aria-expanded', 'false');
+}
+
+document.addEventListener('click', event => {
+  if (!$('accountMenuRoot').contains(event.target)) closeAccountMenu();
+});
 
 async function loadModel() {
   const btn = $('loadBtn');
@@ -1913,7 +1959,8 @@ document.addEventListener('keydown', e => {
     generate(mode);
   }
   if (e.key === 'Escape') {
-    if ($('loaderOv').classList.contains('open'))  $('loaderOv').classList.remove('open');
+    if (!$('accountMenu').hidden) closeAccountMenu();
+    else if ($('loaderOv').classList.contains('open'))  $('loaderOv').classList.remove('open');
     else if ($('settingsOv').classList.contains('open')) closeSettings();
   }
 });
