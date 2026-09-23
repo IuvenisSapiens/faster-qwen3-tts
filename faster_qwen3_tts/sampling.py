@@ -1,7 +1,7 @@
 """Shared sampling helpers for talker and predictor generation."""
 from __future__ import annotations
 
-from typing import Iterable, Optional
+from collections.abc import Iterable
 
 import torch
 import torch.nn.functional as F
@@ -36,8 +36,8 @@ def sample_logits(
     top_k: int,
     top_p: float,
     do_sample: bool,
-    suppress_mask: Optional[torch.Tensor] = None,
-    suppress_tokens: Optional[Iterable[int]] = None,
+    suppress_mask: torch.Tensor | None = None,
+    suppress_tokens: Iterable[int] | None = None,
 ) -> torch.Tensor:
     """Sample a token from logits.
 

@@ -10,8 +10,10 @@ Usage:
     python extract_speaker.py --ref_audio voice.wav --output speaker.pt --model_path ./models/Qwen3-TTS-12Hz-1.7B-Base
 """
 import argparse
-import torch
 import sys
+
+import torch
+
 sys.path.insert(0, '.')
 
 def main():

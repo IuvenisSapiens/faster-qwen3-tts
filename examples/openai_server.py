@@ -44,7 +44,7 @@ import queue
 import struct
 import sys
 import threading
-from typing import AsyncGenerator, Optional
+from collections.abc import AsyncGenerator
 
 import numpy as np
 import torch
@@ -66,7 +66,7 @@ app = FastAPI(title="faster-qwen3-tts OpenAI-compatible API")
 
 tts_model = None
 voices: dict = {}
-default_voice: Optional[str] = None
+default_voice: str | None = None
 SAMPLE_RATE = 24000  # updated once the model loads
 _model_lock = threading.Lock()  # prevent concurrent GPU inference
 

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import queue
 import threading
-from typing import Optional
 
 import numpy as np
 
@@ -17,10 +16,10 @@ class StreamPlayer:
         self.dtype = dtype
         self.max_queue_chunks = max_queue_chunks
 
-        self._queue: queue.Queue[Optional[np.ndarray]] = queue.Queue(maxsize=max_queue_chunks)
+        self._queue: queue.Queue[np.ndarray | None] = queue.Queue(maxsize=max_queue_chunks)
         self._pending = np.zeros((0, channels), dtype=np.float32)
         self._stream = None
-        self._sample_rate: Optional[int] = None
+        self._sample_rate: int | None = None
         self._closed = False
         self._drained = threading.Event()
 
@@ -96,7 +95,7 @@ class StreamPlayer:
         self._ensure_stream(sample_rate)
         self._queue.put(self._reshape_chunk(audio_chunk))
 
-    def close(self, *, wait: bool = True, timeout: Optional[float] = None):
+    def close(self, *, wait: bool = True, timeout: float | None = None):
         if self._closed:
             return
         self._closed = True

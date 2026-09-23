@@ -11,8 +11,8 @@ import logging
 import os
 import time
 import warnings
+from collections.abc import Callable, Generator
 from pathlib import Path
-from typing import Callable, Generator, Optional, Tuple, Union
 
 import numpy as np
 import soundfile as sf
@@ -45,14 +45,14 @@ def _resample_linear(audio: np.ndarray, src_sr: int, dst_sr: int = 24000) -> np.
     if audio.size == 0:
         return np.zeros(0, dtype=np.float32)
     duration = audio.shape[0] / float(src_sr)
-    dst_n = max(1, int(round(duration * dst_sr)))
+    dst_n = max(1, round(duration * dst_sr))
     src_x = np.linspace(0.0, duration, num=audio.shape[0], endpoint=False)
     dst_x = np.linspace(0.0, duration, num=dst_n, endpoint=False)
     return np.interp(dst_x, src_x, audio).astype(np.float32)
 
 
 def _load_ref_audio_24k(
-    ref_audio: Union[str, Path],
+    ref_audio: str | Path,
     *,
     append_silence: bool = True,
     silence_secs: float = 0.5,
@@ -72,7 +72,7 @@ def _default_voice_ref_cache_dir() -> Path:
     return Path.home() / ".cache" / "faster-qwen3-tts" / "qwentts_refs"
 
 
-def _path_identity(path: Union[str, Path]) -> str:
+def _path_identity(path: str | Path) -> str:
     p = Path(path)
     try:
         stat = p.stat()
@@ -81,7 +81,7 @@ def _path_identity(path: Union[str, Path]) -> str:
         return str(p)
 
 
-def _warn_non_prefill_text_mode(non_streaming_mode: Optional[bool]) -> None:
+def _warn_non_prefill_text_mode(non_streaming_mode: bool | None) -> None:
     if non_streaming_mode is False:
         warnings.warn(_NON_PREFILL_TEXT_WARNING, RuntimeWarning, stacklevel=3)
 
@@ -96,7 +96,7 @@ class GGMLQwen3TTS:
         runtime,
         *,
         model_identity: str = "unknown",
-        voice_ref_cache_dir: Optional[Union[str, Path]] = None,
+        voice_ref_cache_dir: str | Path | None = None,
     ):
         self.runtime = runtime
         self.model_identity = str(model_identity)
@@ -104,7 +104,7 @@ class GGMLQwen3TTS:
             Path(voice_ref_cache_dir) if voice_ref_cache_dir is not None else _default_voice_ref_cache_dir()
         )
         self._voice_ref_cache = {}
-        self.last_adapter_profile: Optional[dict] = None
+        self.last_adapter_profile: dict | None = None
 
     def get_supported_speakers(self) -> list[str]:
         if not hasattr(self.runtime, "speaker_names"):
@@ -118,19 +118,19 @@ class GGMLQwen3TTS:
         deliberate no-op. ``prefill_len`` is accepted for API compatibility
         with the Torch backend.
         """
-        return None
+        return
 
     @classmethod
     def from_gguf(
         cls,
-        talker_path: Union[str, Path],
-        codec_path: Union[str, Path],
+        talker_path: str | Path,
+        codec_path: str | Path,
         *,
-        library_path: Optional[Union[str, Path]] = None,
+        library_path: str | Path | None = None,
         use_fa: bool = True,
         clamp_fp16: bool = False,
-        voice_ref_cache_dir: Optional[Union[str, Path]] = None,
-    ) -> "GGMLQwen3TTS":
+        voice_ref_cache_dir: str | Path | None = None,
+    ) -> GGMLQwen3TTS:
         QwenTTS, _load_speaker_embedding = _require_qwentts_cpp()
         runtime = QwenTTS(
             talker_path=talker_path,
@@ -148,13 +148,13 @@ class GGMLQwen3TTS:
         model_name: str,
         *,
         quant: str = "BF16",
-        cache_dir: Optional[Union[str, Path]] = None,
+        cache_dir: str | Path | None = None,
         local_files_only: bool = False,
-        library_path: Optional[Union[str, Path]] = None,
+        library_path: str | Path | None = None,
         use_fa: bool = True,
         clamp_fp16: bool = False,
-        voice_ref_cache_dir: Optional[Union[str, Path]] = None,
-    ) -> "GGMLQwen3TTS":
+        voice_ref_cache_dir: str | Path | None = None,
+    ) -> GGMLQwen3TTS:
         QwenTTS, _load_speaker_embedding = _require_qwentts_cpp()
         runtime = QwenTTS.from_pretrained(
             model_name,
@@ -175,7 +175,7 @@ class GGMLQwen3TTS:
         self,
         text: str,
         language: str,
-        ref_audio: Optional[Union[str, Path]] = None,
+        ref_audio: str | Path | None = None,
         ref_text: str = "",
         max_new_tokens: int = 2048,
         min_new_tokens: int = 2,
@@ -185,15 +185,15 @@ class GGMLQwen3TTS:
         do_sample: bool = True,
         repetition_penalty: float = 1.05,
         xvec_only: bool = False,
-        non_streaming_mode: Optional[bool] = None,
+        non_streaming_mode: bool | None = None,
         append_silence: bool = True,
-        instruct: Optional[str] = None,
-        ref_spk: Optional[Union[str, Path]] = None,
-        ref_rvq: Optional[Union[str, Path]] = None,
-        ref_spk_emb: Optional[np.ndarray] = None,
-        ref_codes: Optional[np.ndarray] = None,
+        instruct: str | None = None,
+        ref_spk: str | Path | None = None,
+        ref_rvq: str | Path | None = None,
+        ref_spk_emb: np.ndarray | None = None,
+        ref_codes: np.ndarray | None = None,
         voice_clone_prompt=None,
-    ) -> Tuple[list, int]:
+    ) -> tuple[list, int]:
         _warn_non_prefill_text_mode(non_streaming_mode)
         if voice_clone_prompt is not None:
             raise NotImplementedError(
@@ -230,7 +230,7 @@ class GGMLQwen3TTS:
         self,
         text: str,
         language: str,
-        ref_audio: Optional[Union[str, Path]] = None,
+        ref_audio: str | Path | None = None,
         ref_text: str = "",
         max_new_tokens: int = 2048,
         min_new_tokens: int = 2,
@@ -241,16 +241,16 @@ class GGMLQwen3TTS:
         repetition_penalty: float = 1.05,
         chunk_size: int = 12,
         xvec_only: bool = False,
-        non_streaming_mode: Optional[bool] = None,
+        non_streaming_mode: bool | None = None,
         append_silence: bool = True,
         parity_mode: bool = False,
-        instruct: Optional[str] = None,
-        ref_spk: Optional[Union[str, Path]] = None,
-        ref_rvq: Optional[Union[str, Path]] = None,
-        ref_spk_emb: Optional[np.ndarray] = None,
-        ref_codes: Optional[np.ndarray] = None,
+        instruct: str | None = None,
+        ref_spk: str | Path | None = None,
+        ref_rvq: str | Path | None = None,
+        ref_spk_emb: np.ndarray | None = None,
+        ref_codes: np.ndarray | None = None,
         voice_clone_prompt=None,
-    ) -> Generator[Tuple[np.ndarray, int, dict], None, None]:
+    ) -> Generator[tuple[np.ndarray, int, dict], None, None]:
         _warn_non_prefill_text_mode(non_streaming_mode)
         if voice_clone_prompt is not None:
             raise NotImplementedError(
@@ -287,15 +287,15 @@ class GGMLQwen3TTS:
     def _resolve_clone_reference(
         self,
         *,
-        ref_audio: Optional[Union[str, Path]],
+        ref_audio: str | Path | None,
         ref_text: str,
         xvec_only: bool,
         append_silence: bool,
-        ref_spk: Optional[Union[str, Path]],
-        ref_rvq: Optional[Union[str, Path]],
-        ref_spk_emb: Optional[np.ndarray],
-        ref_codes: Optional[np.ndarray],
-    ) -> Tuple[dict, float, dict]:
+        ref_spk: str | Path | None,
+        ref_rvq: str | Path | None,
+        ref_spk_emb: np.ndarray | None,
+        ref_codes: np.ndarray | None,
+    ) -> tuple[dict, float, dict]:
         adapter_start = time.perf_counter()
         adapter_profile = {
             "mode": "clone",
@@ -472,8 +472,8 @@ class GGMLQwen3TTS:
 
     def _load_cached_speaker(
         self,
-        ref_spk: Optional[Union[str, Path]],
-        ref_spk_emb: Optional[np.ndarray],
+        ref_spk: str | Path | None,
+        ref_spk_emb: np.ndarray | None,
     ) -> np.ndarray:
         if ref_spk_emb is not None:
             spk_emb = np.ascontiguousarray(ref_spk_emb, dtype=np.float32).reshape(-1)
@@ -489,14 +489,14 @@ class GGMLQwen3TTS:
 
     def _load_cached_codes(
         self,
-        ref_rvq: Optional[Union[str, Path]],
-        ref_codes: Optional[np.ndarray],
-    ) -> Optional[np.ndarray]:
+        ref_rvq: str | Path | None,
+        ref_codes: np.ndarray | None,
+    ) -> np.ndarray | None:
         if ref_codes is not None:
             return np.ascontiguousarray(ref_codes, dtype=np.int32)
         if ref_rvq is None:
             return None
-        load_rvq_codes: Optional[Callable[..., np.ndarray]] = getattr(
+        load_rvq_codes: Callable[..., np.ndarray] | None = getattr(
             self.runtime,
             "load_rvq_codes",
             None,
@@ -513,8 +513,8 @@ class GGMLQwen3TTS:
         text: str,
         speaker: str,
         language: str,
-        instruct: Optional[str] = None,
-        non_streaming_mode: Optional[bool] = None,
+        instruct: str | None = None,
+        non_streaming_mode: bool | None = None,
         max_new_tokens: int = 2048,
         min_new_tokens: int = 2,
         temperature: float = 0.9,
@@ -522,7 +522,7 @@ class GGMLQwen3TTS:
         top_p: float = 1.0,
         do_sample: bool = True,
         repetition_penalty: float = 1.05,
-    ) -> Tuple[list, int]:
+    ) -> tuple[list, int]:
         _warn_non_prefill_text_mode(non_streaming_mode)
         audio, sr = self.runtime.synthesize(
             text=text,
@@ -543,8 +543,8 @@ class GGMLQwen3TTS:
         text: str,
         speaker: str,
         language: str,
-        instruct: Optional[str] = None,
-        non_streaming_mode: Optional[bool] = None,
+        instruct: str | None = None,
+        non_streaming_mode: bool | None = None,
         max_new_tokens: int = 2048,
         min_new_tokens: int = 2,
         temperature: float = 0.9,
@@ -553,7 +553,7 @@ class GGMLQwen3TTS:
         do_sample: bool = True,
         repetition_penalty: float = 1.05,
         chunk_size: int = 12,
-    ) -> Generator[Tuple[np.ndarray, int, dict], None, None]:
+    ) -> Generator[tuple[np.ndarray, int, dict], None, None]:
         _warn_non_prefill_text_mode(non_streaming_mode)
         adapter_start = time.perf_counter()
         yield from self._stream_runtime(
@@ -576,7 +576,7 @@ class GGMLQwen3TTS:
         text: str,
         instruct: str,
         language: str,
-        non_streaming_mode: Optional[bool] = None,
+        non_streaming_mode: bool | None = None,
         max_new_tokens: int = 2048,
         min_new_tokens: int = 2,
         temperature: float = 0.9,
@@ -584,7 +584,7 @@ class GGMLQwen3TTS:
         top_p: float = 1.0,
         do_sample: bool = True,
         repetition_penalty: float = 1.05,
-    ) -> Tuple[list, int]:
+    ) -> tuple[list, int]:
         _warn_non_prefill_text_mode(non_streaming_mode)
         audio, sr = self.runtime.synthesize(
             text=text,
@@ -604,7 +604,7 @@ class GGMLQwen3TTS:
         text: str,
         instruct: str,
         language: str,
-        non_streaming_mode: Optional[bool] = None,
+        non_streaming_mode: bool | None = None,
         max_new_tokens: int = 2048,
         min_new_tokens: int = 2,
         temperature: float = 0.9,
@@ -613,7 +613,7 @@ class GGMLQwen3TTS:
         do_sample: bool = True,
         repetition_penalty: float = 1.05,
         chunk_size: int = 12,
-    ) -> Generator[Tuple[np.ndarray, int, dict], None, None]:
+    ) -> Generator[tuple[np.ndarray, int, dict], None, None]:
         _warn_non_prefill_text_mode(non_streaming_mode)
         adapter_start = time.perf_counter()
         yield from self._stream_runtime(
@@ -635,7 +635,7 @@ class GGMLQwen3TTS:
         *,
         chunk_size: int,
         adapter_prepare_ms: float = 0.0,
-        adapter_profile: Optional[dict] = None,
+        adapter_profile: dict | None = None,
         **kwargs,
     ):
         chunk_sec = max(1, int(chunk_size)) / _QWEN_FRAME_RATE

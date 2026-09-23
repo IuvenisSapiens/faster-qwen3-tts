@@ -3,7 +3,6 @@
 Non-streaming generation loop using CUDA graphs for both predictor and talker.
 """
 import time
-from typing import Optional, Tuple
 
 import torch
 
@@ -29,12 +28,12 @@ def fast_generate(
     top_p: float = 1.0,
     do_sample: bool = True,
     repetition_penalty: float = 1.05,
-    subtalker_dosample: Optional[bool] = None,
-    subtalker_top_k: Optional[int] = None,
-    subtalker_top_p: Optional[float] = None,
-    subtalker_temperature: Optional[float] = None,
+    subtalker_dosample: bool | None = None,
+    subtalker_top_k: int | None = None,
+    subtalker_top_p: float | None = None,
+    subtalker_temperature: float | None = None,
     parity_mode: bool = False,
-) -> Tuple[Optional[torch.Tensor], dict]:
+) -> tuple[torch.Tensor | None, dict]:
     """
     Fast autoregressive generation with CUDA-graphed predictor and talker.
     """

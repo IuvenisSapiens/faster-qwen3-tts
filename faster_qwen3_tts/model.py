@@ -5,8 +5,9 @@ Wrapper class that provides a Qwen3-TTS API while using
 CUDA graphs for 6-10x speedup.
 """
 import logging
+from collections.abc import Generator
 from pathlib import Path
-from typing import Any, Dict, Generator, List, Optional, Tuple, Union
+from typing import Any
 
 import numpy as np
 import soundfile as sf
@@ -17,6 +18,32 @@ from .utils import suppress_flash_attn_warning
 logger = logging.getLogger(__name__)
 
 
+def _patch_qwen3_tts_transformers_compat() -> None:
+    """Bridge qwen-tts to the Transformers 5.x RoPE config API.
+
+    The upstream qwen-tts compatibility shim still reads the legacy
+    ``config.rope_theta`` attribute when configuring RoPE, but Transformers 5.x
+    stores the equivalent value inside ``rope_parameters`` and exposes the
+    default on the mixin instead. Populate the legacy attribute before model
+    loading to avoid crashing on the Mimi speech-tokenizer config.
+    """
+    try:
+        from qwen_tts import patch_transformers_rope_registry
+
+        patch_transformers_rope_registry()
+    except Exception:  # pragma: no cover - depends on qwen-tts package
+        pass
+
+    try:
+        from transformers.models.mimi.configuration_mimi import MimiConfig
+
+        if not hasattr(MimiConfig, "rope_theta"):
+            default_theta = getattr(MimiConfig, "default_theta", 10000.0)
+            MimiConfig.rope_theta = default_theta
+            if not hasattr(MimiConfig, "partial_rotary_factor"):
+                MimiConfig.partial_rotary_factor = 1.0
+    except Exception:  # pragma: no cover - transformers may be absent
+        pass
 
 
 class FasterQwen3TTS:
@@ -83,7 +110,7 @@ class FasterQwen3TTS:
 
     @staticmethod
     def _resolve_non_streaming_mode(
-        non_streaming_mode: Optional[bool],
+        non_streaming_mode: bool | None,
         *,
         default: bool,
     ) -> bool:
@@ -92,10 +119,10 @@ class FasterQwen3TTS:
 
     @staticmethod
     def _reject_ggml_cached_reference_args(
-        ref_spk: Optional[Union[str, Path]],
-        ref_rvq: Optional[Union[str, Path]],
-        ref_spk_emb: Optional[np.ndarray],
-        ref_codes: Optional[np.ndarray],
+        ref_spk: str | Path | None,
+        ref_rvq: str | Path | None,
+        ref_spk_emb: np.ndarray | None,
+        ref_codes: np.ndarray | None,
     ) -> None:
         if any(value is not None for value in (ref_spk, ref_rvq, ref_spk_emb, ref_codes)):
             raise NotImplementedError(
@@ -108,18 +135,18 @@ class FasterQwen3TTS:
         cls,
         model_name: str,
         device: str = "cuda",
-        dtype: Union[str, torch.dtype] = torch.bfloat16,
+        dtype: str | torch.dtype = torch.bfloat16,
         attn_implementation: str = "sdpa",
         max_seq_len: int = 2048,
         backend: str = "torch",
         quant: str = "BF16",
-        gguf_talker_path: Optional[Union[str, Path]] = None,
-        gguf_codec_path: Optional[Union[str, Path]] = None,
-        qwentts_library_path: Optional[Union[str, Path]] = None,
+        gguf_talker_path: str | Path | None = None,
+        gguf_codec_path: str | Path | None = None,
+        qwentts_library_path: str | Path | None = None,
         qwentts_use_fa: bool = True,
         qwentts_clamp_fp16: bool = False,
-        qwentts_ref_cache_dir: Optional[Union[str, Path]] = None,
-        cache_dir: Optional[Union[str, Path]] = None,
+        qwentts_ref_cache_dir: str | Path | None = None,
+        cache_dir: str | Path | None = None,
         local_files_only: bool = False,
     ):
         """
@@ -174,6 +201,8 @@ class FasterQwen3TTS:
                 clamp_fp16=qwentts_clamp_fp16,
                 voice_ref_cache_dir=qwentts_ref_cache_dir,
             )
+
+        _patch_qwen3_tts_transformers_compat()
 
         if isinstance(dtype, str):
             dtype = getattr(torch, dtype)
@@ -264,7 +293,7 @@ class FasterQwen3TTS:
         top_k: int = 50,
         do_sample: bool = True,
         repetition_penalty: float = 1.05,
-    ) -> Tuple[list, int]:
+    ) -> tuple[list, int]:
         """
         Generate speech from text using default voice.
         
@@ -275,7 +304,7 @@ class FasterQwen3TTS:
             "Use generate_voice_clone() with reference audio."
         )
     
-    def _load_ref_audio_with_silence(self, ref_audio: Union[str, Path], silence_secs: float = 0.5) -> Tuple[np.ndarray, int]:
+    def _load_ref_audio_with_silence(self, ref_audio: str | Path, silence_secs: float = 0.5) -> tuple[np.ndarray, int]:
         """Load reference audio and optionally append trailing silence.
 
         The ICL voice-cloning prompt ends with the last codec token of the reference
@@ -295,12 +324,12 @@ class FasterQwen3TTS:
     def _resolve_voice_clone_prompt(
         self,
         input_ids,
-        ref_audio: Optional[Union[str, Path]],
+        ref_audio: str | Path | None,
         ref_text: str,
         xvec_only: bool,
         append_silence: bool,
-        voice_clone_prompt: Optional[Union[Dict[str, Any], List[Any]]],
-    ) -> Tuple[Dict[str, Any], list, bool]:
+        voice_clone_prompt: dict[str, Any] | list[Any] | None,
+    ) -> tuple[dict[str, Any], list, bool]:
         """Resolve voice clone prompt data and return (prompt, ref_ids, using_icl_mode)."""
         if voice_clone_prompt is not None:
             return self._resolve_precomputed_voice_clone_prompt(
@@ -323,8 +352,8 @@ class FasterQwen3TTS:
         self,
         input_ids,
         ref_text: str,
-        voice_clone_prompt: Union[Dict[str, Any], List[Any]],
-    ) -> Tuple[Dict[str, Any], list, bool]:
+        voice_clone_prompt: dict[str, Any] | list[Any],
+    ) -> tuple[dict[str, Any], list, bool]:
         if isinstance(voice_clone_prompt, list):
             if len(voice_clone_prompt) != len(input_ids):
                 raise ValueError(
@@ -390,12 +419,12 @@ class FasterQwen3TTS:
                     f"voice_clone_prompt index {i}: ref_code is required in ICL mode"
                 )
 
-        vcp = dict(
-            ref_code=ref_codes,
-            ref_spk_embedding=voice_clone_prompt["ref_spk_embedding"],
-            x_vector_only_mode=[bool(v) for v in xvec_modes],
-            icl_mode=[bool(v) for v in icl_modes],
-        )
+        vcp = {
+            "ref_code": ref_codes,
+            "ref_spk_embedding": voice_clone_prompt["ref_spk_embedding"],
+            "x_vector_only_mode": [bool(v) for v in xvec_modes],
+            "icl_mode": [bool(v) for v in icl_modes],
+        }
         using_icl_mode = any(vcp["icl_mode"])
 
         if using_icl_mode:
@@ -415,11 +444,11 @@ class FasterQwen3TTS:
     def _resolve_voice_clone_prompt_from_reference(
         self,
         input_ids,
-        ref_audio: Union[str, Path],
+        ref_audio: str | Path,
         ref_text: str,
         xvec_only: bool,
         append_silence: bool,
-    ) -> Tuple[Dict[str, Any], list, bool]:
+    ) -> tuple[dict[str, Any], list, bool]:
         using_icl_mode = not xvec_only
         cache_key = (str(ref_audio), ref_text, xvec_only, append_silence)
         if cache_key in self._voice_prompt_cache:
@@ -433,12 +462,12 @@ class FasterQwen3TTS:
                 x_vector_only_mode=True,
             )
             spk_emb = prompt_items[0].ref_spk_embedding
-            vcp = dict(
-                ref_code=[None],
-                ref_spk_embedding=[spk_emb],
-                x_vector_only_mode=[True],
-                icl_mode=[False],
-            )
+            vcp = {
+                "ref_code": [None],
+                "ref_spk_embedding": [spk_emb],
+                "x_vector_only_mode": [True],
+                "icl_mode": [False],
+            }
             ref_ids = [None] * len(input_ids)
             self._voice_prompt_cache[cache_key] = (vcp, ref_ids)
             return vcp, ref_ids, using_icl_mode
@@ -465,14 +494,14 @@ class FasterQwen3TTS:
     def _prepare_generation(
         self,
         text: str,
-        ref_audio: Optional[Union[str, Path]] = None,
+        ref_audio: str | Path | None = None,
         ref_text: str = "",
         language: str = "English",
         xvec_only: bool = False,
         non_streaming_mode: bool = False,
         append_silence: bool = True,
-        voice_clone_prompt: Optional[Union[Dict[str, Any], List[Any]]] = None,
-        instruct: Optional[str] = None,
+        voice_clone_prompt: dict[str, Any] | list[Any] | None = None,
+        instruct: str | None = None,
     ):
         """Prepare inputs for generation (shared by streaming and non-streaming).
 
@@ -546,8 +575,8 @@ class FasterQwen3TTS:
         self,
         text: str,
         language: str,
-        speaker: Optional[str],
-        instruct: Optional[str] = None,
+        speaker: str | None,
+        instruct: str | None = None,
         non_streaming_mode: bool = True,
     ):
         input_texts = [self.model._build_assistant_text(text)]
@@ -809,7 +838,7 @@ class FasterQwen3TTS:
         self,
         text: str,
         language: str,
-        ref_audio: Optional[Union[str, Path]] = None,
+        ref_audio: str | Path | None = None,
         ref_text: str = "",
         max_new_tokens: int = 2048,
         min_new_tokens: int = 2,
@@ -819,15 +848,15 @@ class FasterQwen3TTS:
         do_sample: bool = True,
         repetition_penalty: float = 1.05,
         xvec_only: bool = False,
-        non_streaming_mode: Optional[bool] = None,
+        non_streaming_mode: bool | None = None,
         append_silence: bool = True,
-        instruct: Optional[str] = None,
-        ref_spk: Optional[Union[str, Path]] = None,
-        ref_rvq: Optional[Union[str, Path]] = None,
-        ref_spk_emb: Optional[np.ndarray] = None,
-        ref_codes: Optional[np.ndarray] = None,
-        voice_clone_prompt: Optional[Union[Dict[str, Any], List[Any]]] = None,
-    ) -> Tuple[list, int]:
+        instruct: str | None = None,
+        ref_spk: str | Path | None = None,
+        ref_rvq: str | Path | None = None,
+        ref_spk_emb: np.ndarray | None = None,
+        ref_codes: np.ndarray | None = None,
+        voice_clone_prompt: dict[str, Any] | list[Any] | None = None,
+    ) -> tuple[list, int]:
         """
         Generate speech with voice cloning using reference audio.
 
@@ -954,7 +983,7 @@ class FasterQwen3TTS:
         self,
         text: str,
         language: str,
-        ref_audio: Optional[Union[str, Path]] = None,
+        ref_audio: str | Path | None = None,
         ref_text: str = "",
         max_new_tokens: int = 2048,
         min_new_tokens: int = 2,
@@ -965,16 +994,16 @@ class FasterQwen3TTS:
         repetition_penalty: float = 1.05,
         chunk_size: int = 12,
         xvec_only: bool = False,
-        non_streaming_mode: Optional[bool] = None,
+        non_streaming_mode: bool | None = None,
         append_silence: bool = True,
         parity_mode: bool = False,
-        instruct: Optional[str] = None,
-        ref_spk: Optional[Union[str, Path]] = None,
-        ref_rvq: Optional[Union[str, Path]] = None,
-        ref_spk_emb: Optional[np.ndarray] = None,
-        ref_codes: Optional[np.ndarray] = None,
-        voice_clone_prompt: Optional[Union[Dict[str, Any], List[Any]]] = None,
-    ) -> Generator[Tuple[np.ndarray, int, dict], None, None]:
+        instruct: str | None = None,
+        ref_spk: str | Path | None = None,
+        ref_rvq: str | Path | None = None,
+        ref_spk_emb: np.ndarray | None = None,
+        ref_codes: np.ndarray | None = None,
+        voice_clone_prompt: dict[str, Any] | list[Any] | None = None,
+    ) -> Generator[tuple[np.ndarray, int, dict], None, None]:
         """
         Stream voice-cloned speech generation, yielding audio chunks.
 
@@ -1056,22 +1085,22 @@ class FasterQwen3TTS:
         samples_per_frame = None
 
         stream_fn = parity_generate_streaming if parity_mode else fast_generate_streaming
-        stream_kwargs = dict(
-            talker=talker,
-            talker_input_embeds=tie,
-            attention_mask=tam,
-            trailing_text_hiddens=tth,
-            tts_pad_embed=tpe,
-            config=config,
-            max_new_tokens=max_new_tokens,
-            min_new_tokens=min_new_tokens,
-            temperature=temperature,
-            top_k=top_k,
-            top_p=top_p,
-            do_sample=do_sample,
-            repetition_penalty=repetition_penalty,
-            chunk_size=chunk_size,
-        )
+        stream_kwargs = {
+            "talker": talker,
+            "talker_input_embeds": tie,
+            "attention_mask": tam,
+            "trailing_text_hiddens": tth,
+            "tts_pad_embed": tpe,
+            "config": config,
+            "max_new_tokens": max_new_tokens,
+            "min_new_tokens": min_new_tokens,
+            "temperature": temperature,
+            "top_k": top_k,
+            "top_p": top_p,
+            "do_sample": do_sample,
+            "repetition_penalty": repetition_penalty,
+            "chunk_size": chunk_size,
+        }
         if not parity_mode:
             stream_kwargs["predictor_graph"] = self.predictor_graph
             stream_kwargs["talker_graph"] = self.talker_graph
@@ -1129,7 +1158,7 @@ class FasterQwen3TTS:
                     audio = audio.flatten() if hasattr(audio, 'flatten') else audio
 
                 if n_ctx > 0:
-                    ctx_samples = int(round(n_ctx * samples_per_frame))
+                    ctx_samples = round(n_ctx * samples_per_frame)
                     new_audio = audio[ctx_samples:]
                 else:
                     new_audio = audio
@@ -1142,8 +1171,8 @@ class FasterQwen3TTS:
         text: str,
         speaker: str,
         language: str,
-        instruct: Optional[str] = None,
-        non_streaming_mode: Optional[bool] = None,
+        instruct: str | None = None,
+        non_streaming_mode: bool | None = None,
         max_new_tokens: int = 2048,
         min_new_tokens: int = 2,
         temperature: float = 0.9,
@@ -1151,7 +1180,7 @@ class FasterQwen3TTS:
         top_p: float = 1.0,
         do_sample: bool = True,
         repetition_penalty: float = 1.05,
-    ) -> Tuple[list, int]:
+    ) -> tuple[list, int]:
         if self.model.model.tts_model_type != "custom_voice":
             raise ValueError("Loaded model does not support custom voice generation")
 
@@ -1226,8 +1255,8 @@ class FasterQwen3TTS:
         text: str,
         speaker: str,
         language: str,
-        instruct: Optional[str] = None,
-        non_streaming_mode: Optional[bool] = None,
+        instruct: str | None = None,
+        non_streaming_mode: bool | None = None,
         max_new_tokens: int = 2048,
         min_new_tokens: int = 2,
         temperature: float = 0.9,
@@ -1236,7 +1265,7 @@ class FasterQwen3TTS:
         do_sample: bool = True,
         repetition_penalty: float = 1.05,
         chunk_size: int = 12,
-    ) -> Generator[Tuple[np.ndarray, int, dict], None, None]:
+    ) -> Generator[tuple[np.ndarray, int, dict], None, None]:
         if self.model.model.tts_model_type != "custom_voice":
             raise ValueError("Loaded model does not support custom voice generation")
 
@@ -1318,7 +1347,7 @@ class FasterQwen3TTS:
                     audio = audio.flatten() if hasattr(audio, "flatten") else audio
 
                 if n_ctx > 0:
-                    ctx_samples = int(round(n_ctx * samples_per_frame))
+                    ctx_samples = round(n_ctx * samples_per_frame)
                     new_audio = audio[ctx_samples:]
                 else:
                     new_audio = audio
@@ -1331,7 +1360,7 @@ class FasterQwen3TTS:
         text: str,
         instruct: str,
         language: str,
-        non_streaming_mode: Optional[bool] = None,
+        non_streaming_mode: bool | None = None,
         max_new_tokens: int = 2048,
         min_new_tokens: int = 2,
         temperature: float = 0.9,
@@ -1339,7 +1368,7 @@ class FasterQwen3TTS:
         top_p: float = 1.0,
         do_sample: bool = True,
         repetition_penalty: float = 1.05,
-    ) -> Tuple[list, int]:
+    ) -> tuple[list, int]:
         if self.model.model.tts_model_type != "voice_design":
             raise ValueError("Loaded model does not support voice design generation")
 
@@ -1410,7 +1439,7 @@ class FasterQwen3TTS:
         text: str,
         instruct: str,
         language: str,
-        non_streaming_mode: Optional[bool] = None,
+        non_streaming_mode: bool | None = None,
         max_new_tokens: int = 2048,
         min_new_tokens: int = 2,
         temperature: float = 0.9,
@@ -1419,7 +1448,7 @@ class FasterQwen3TTS:
         do_sample: bool = True,
         repetition_penalty: float = 1.05,
         chunk_size: int = 12,
-    ) -> Generator[Tuple[np.ndarray, int, dict], None, None]:
+    ) -> Generator[tuple[np.ndarray, int, dict], None, None]:
         if self.model.model.tts_model_type != "voice_design":
             raise ValueError("Loaded model does not support voice design generation")
 
@@ -1497,7 +1526,7 @@ class FasterQwen3TTS:
                     audio = audio.flatten() if hasattr(audio, "flatten") else audio
 
                 if n_ctx > 0:
-                    ctx_samples = int(round(n_ctx * samples_per_frame))
+                    ctx_samples = round(n_ctx * samples_per_frame)
                     new_audio = audio[ctx_samples:]
                 else:
                     new_audio = audio

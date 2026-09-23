@@ -17,8 +17,9 @@ Usage:
     python examples/generate_with_embedding.py --speaker speaker.pt --text "Bonjour le monde" --language French --output out.wav
 """
 import argparse
-import torch
 import sys
+
+import torch
 
 sys.path.insert(0, '.')
 
@@ -26,12 +27,12 @@ sys.path.insert(0, '.')
 def load_xvector_prompt(path: str, device: str = "cuda:0") -> dict:
     """Load a saved x-vector and return a voice_clone_prompt dict."""
     spk_emb = torch.load(path, weights_only=True).to(device)
-    return dict(
-        ref_code=[None],
-        ref_spk_embedding=[spk_emb],
-        x_vector_only_mode=[True],
-        icl_mode=[False],
-    )
+    return {
+        'ref_code': [None],
+        'ref_spk_embedding': [spk_emb],
+        'x_vector_only_mode': [True],
+        'icl_mode': [False],
+    }
 
 
 def main():
@@ -45,6 +46,7 @@ def main():
     args = parser.parse_args()
 
     import soundfile as sf
+
     from faster_qwen3_tts import FasterQwen3TTS
     from faster_qwen3_tts.generate import fast_generate
 

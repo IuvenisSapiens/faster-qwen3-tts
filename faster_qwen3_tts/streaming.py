@@ -6,7 +6,7 @@ Yields codec ID chunks during generation instead of collecting all at once.
 CUDA graph usage is identical to non-streaming — same per-step performance.
 """
 import time
-from typing import Generator, Tuple
+from collections.abc import Generator
 
 import torch
 
@@ -33,7 +33,7 @@ def fast_generate_streaming(
     do_sample: bool = True,
     repetition_penalty: float = 1.05,
     chunk_size: int = 12,
-) -> Generator[Tuple[torch.Tensor, dict], None, None]:
+) -> Generator[tuple[torch.Tensor, dict], None, None]:
     """
     Streaming autoregressive generation with CUDA-graphed predictor and talker.
 
@@ -204,7 +204,7 @@ def parity_generate_streaming(
     do_sample: bool = True,
     repetition_penalty: float = 1.05,
     chunk_size: int = 12,
-) -> Generator[Tuple[torch.Tensor, dict], None, None]:
+) -> Generator[tuple[torch.Tensor, dict], None, None]:
     """
     Streaming generation without CUDA graphs (dynamic cache).
 
