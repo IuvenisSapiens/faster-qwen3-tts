@@ -1,10 +1,14 @@
 # Faster Qwen3-TTS
 
-Real-time Qwen3-TTS inference using CUDA graph capture. No Flash Attention, no vLLM, no Triton. Just `torch.cuda.CUDAGraph`. Supports both streaming and non-streaming generation.
+Real-time Qwen3-TTS inference with streaming and non-streaming generation. The
+default Torch backend uses `torch.cuda.CUDAGraph`; the optional GGML backend
+supports CUDA and Apple Silicon Metal.
 
 ## Install
 
-Requires: Python 3.10+, PyTorch 2.5.1+, NVIDIA GPU with CUDA.
+Requires: Python 3.10+ and PyTorch 2.5.1+. The default Torch backend requires
+an NVIDIA GPU with CUDA. The optional GGML backend also runs on Apple Silicon
+Macs with macOS 14 or newer.
 
 ```bash
 pip install faster-qwen3-tts
@@ -42,18 +46,21 @@ faster-qwen3-tts --backend ggml --quant BF16 design \
   --output out.wav
 ```
 
-The extra installs `qwentts-cpp-python>=0.3.1` from PyPI. That default wheel is
-CUDA 12.8. For CUDA 13 / DGX Spark, CUDA 12.4 targets, or Ubuntu 22.04 / older
-Linux hosts that need a `manylinux_2_35` wheel, install the matching wrapper
-wheel from the Hugging Face wheelhouse before installing the extra:
+The extra requires `qwentts-cpp-python>=0.4.0`. The current PyPI release,
+0.4.1, provides a Metal wheel for macOS 14+ with native Apple Silicon Python
+and CUDA 12.8 wheels for supported Linux hosts. Pip selects the matching
+wheel. No local native build or `--qwentts-lib` path is needed on a supported
+Mac. For CUDA 13 / DGX Spark, CUDA 12.4 targets, or
+Ubuntu 22.04 / older Linux hosts that need a `manylinux_2_35` wheel, install
+the matching wrapper wheel from the Hugging Face wheelhouse first:
 
 ```bash
 # Ubuntu 22.04 / older Linux with CUDA 12.8
-pip install "qwentts-cpp-python==0.3.1+cu128" \
+pip install "qwentts-cpp-python==0.4.0+cu128" \
   -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/tree/main/whl/cu128
 
 # CUDA 13 / DGX Spark
-pip install "qwentts-cpp-python==0.3.1+cu130" \
+pip install "qwentts-cpp-python==0.4.0+cu130" \
   -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/tree/main/whl/cu130
 
 pip install "faster-qwen3-tts[ggml]"

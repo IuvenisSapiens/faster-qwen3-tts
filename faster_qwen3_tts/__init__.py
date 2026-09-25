@@ -1,5 +1,5 @@
 """
-faster-qwen3-tts: Real-time Qwen3-TTS inference using CUDA graphs
+faster-qwen3-tts: Real-time Qwen3-TTS inference with CUDA graphs or GGML
 """
 from .model import FasterQwen3TTS
 from .ggml_backend import GGMLQwen3TTS
