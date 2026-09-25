@@ -38,6 +38,9 @@ Homebrew libraries, local native build, or `qwentts_library_path` are needed.
 The Torch backend still requires CUDA. Intel Macs and macOS older than 14 are
 not covered by the Metal wheel.
 
+The CLI hides native GGML diagnostics by default. Put `--verbose` before the
+subcommand to show them when troubleshooting.
+
 To verify Metal execution with local GGUF weights, set `GGML_BACKEND=MTL0`.
 This selects the Metal device explicitly, so generation fails if only a CPU
 backend is available:
