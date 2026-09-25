@@ -1,3 +1,4 @@
+import os
 import sys
 import types
 import warnings
@@ -485,3 +486,74 @@ def test_cli_keeps_torch_default_with_cuda_and_explicit_torch_without_it(monkeyp
     cli._load_model(cli.build_parser().parse_args(["--backend", "torch", *command]))
     assert calls[-1][1]["device"] == "cuda"
     assert "backend" not in calls[-1][1]
+
+
+@pytest.mark.parametrize("verbose", [False, True])
+def test_cli_native_diagnostics_are_opt_in(monkeypatch, capfd, verbose):
+    from faster_qwen3_tts import cli
+
+    def fake_custom(_args):
+        os.write(2, b"native diagnostic\n")
+        print("Wrote out.wav")
+
+    monkeypatch.setattr(cli.torch.cuda, "is_available", lambda: False)
+    monkeypatch.setattr(cli, "cmd_custom", fake_custom)
+    command = [
+        "custom", "--model", "model", "--speaker", "aiden",
+        "--text", "Hello", "--output", "out.wav",
+    ]
+    monkeypatch.setattr(cli.sys, "argv", [
+        "faster-qwen3-tts", *(["--verbose"] if verbose else []),
+        "--gguf-model", "talker.gguf", "--gguf-codec", "codec.gguf", *command,
+    ])
+
+    cli.main()
+
+    out, err = capfd.readouterr()
+    assert out == "Wrote out.wav\n"
+    assert ("native diagnostic" in err) is verbose
+
+
+def test_cli_keeps_model_download_progress_visible(monkeypatch, capfd):
+    from faster_qwen3_tts import cli
+
+    def fake_resolve(model_id, *, quant):
+        assert model_id == "model"
+        assert quant == "Q4_K_M"
+        os.write(2, b"download progress\n")
+
+    def fake_custom(_args):
+        os.write(2, b"native diagnostic\n")
+        print("Wrote out.wav")
+
+    fake_package = types.ModuleType("qwentts_cpp")
+    fake_package.__path__ = []
+    fake_models = types.ModuleType("qwentts_cpp.models")
+    fake_models.resolve_gguf_paths = fake_resolve
+    monkeypatch.setitem(sys.modules, "qwentts_cpp", fake_package)
+    monkeypatch.setitem(sys.modules, "qwentts_cpp.models", fake_models)
+    monkeypatch.setattr(cli.torch.cuda, "is_available", lambda: False)
+    monkeypatch.setattr(cli, "cmd_custom", fake_custom)
+    monkeypatch.setattr(cli.sys, "argv", [
+        "faster-qwen3-tts", "--quant", "Q4_K_M", "custom",
+        "--model", "model", "--speaker", "aiden", "--text", "Hello",
+        "--output", "out.wav",
+    ])
+
+    cli.main()
+
+    out, err = capfd.readouterr()
+    assert out == "Wrote out.wav\n"
+    assert err == "download progress\n"
+
+
+def test_cli_restores_stderr_after_native_failure(capfd):
+    from faster_qwen3_tts.cli import _quiet_native_stderr
+
+    with pytest.raises(RuntimeError):
+        with _quiet_native_stderr():
+            os.write(2, b"native diagnostic\n")
+            raise RuntimeError("synthesis failed")
+
+    os.write(2, b"visible error\n")
+    assert capfd.readouterr().err == "native diagnostic\nvisible error\n"
