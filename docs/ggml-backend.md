@@ -1,7 +1,7 @@
 # qwentts.cpp GGML Backend
 
-This repo keeps `faster-qwen3-tts` as the user-facing package and adds
-`qwentts-cpp-python` as an optional native runtime package.
+This repo keeps `faster-qwen3-tts` as the user-facing package and uses
+`qwentts-cpp-python` as its native GGML runtime.
 
 ## Package Layout
 
@@ -18,15 +18,16 @@ qwentts.cpp
   Pascal's C++/GGML implementation, built separately with CMake
 ```
 
-The main package stays installable without native binaries:
+On native Apple Silicon Python, the default install includes the Metal runtime:
 
 ```bash
 pip install faster-qwen3-tts
 ```
 
-The GGML backend is opt-in and requires `qwentts-cpp-python>=0.4.1`. The
-current PyPI release, 0.4.1, provides a Metal wheel for macOS 14+ with native
-Apple Silicon Python and CUDA 12.8 wheels for supported Linux hosts:
+On other platforms, GGML is opt-in through the `ggml` extra. Both paths require
+`qwentts-cpp-python>=0.4.1`. PyPI version 0.4.1 provides a Metal wheel for
+macOS 14+ with native Apple Silicon Python and CUDA 12.8 wheels for supported
+Linux hosts:
 
 ```bash
 pip install "faster-qwen3-tts[ggml]"
