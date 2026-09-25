@@ -40,6 +40,10 @@ selects Torch when CUDA is available and GGML otherwise. On Apple Silicon,
 the native GGML wheel is included in the default install. On other platforms,
 install the `ggml` extra to get it. Use `--backend` to choose one explicitly.
 
+The GGML CLI hides native startup and generation diagnostics by default, while
+keeping the final `Wrote ...` result and Python errors visible. Add `--verbose`
+before the subcommand to see the native diagnostics.
+
 ```bash
 pip install "faster-qwen3-tts[ggml]"
 
