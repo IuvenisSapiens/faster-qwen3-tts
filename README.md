@@ -1,14 +1,22 @@
 # Faster Qwen3-TTS
 
-Real-time Qwen3-TTS inference using CUDA graph capture. No Flash Attention, no vLLM, no Triton. Just `torch.cuda.CUDAGraph`. Supports both streaming and non-streaming generation.
+Real-time Qwen3-TTS inference with streaming and non-streaming generation. The
+Torch backend uses `torch.cuda.CUDAGraph`; the GGML backend supports CUDA and
+Apple Silicon Metal.
 
 ## Install
 
-Requires: Python 3.10+, PyTorch 2.5.1+, NVIDIA GPU with CUDA.
+Requires: Python 3.10+ and PyTorch 2.5.1+. The Torch backend requires
+an NVIDIA GPU with CUDA. The GGML backend also runs on Apple Silicon
+Macs with macOS 14 or newer.
 
 ```bash
 pip install faster-qwen3-tts
 ```
+
+On native Apple Silicon Python, this also installs the GGML Metal runtime and
+the CLI selects it automatically. Intel Macs and Rosetta Python are not
+supported by the Metal wheel.
 
 The default install uses `qwen-tts-hf`, a temporary PyPI compatibility build
 of Qwen3-TTS with Transformers 5 support. It provides the same `qwen_tts`
@@ -27,9 +35,10 @@ pip install "torch==2.5.1" "torchaudio==2.5.1" --index-url https://download.pyto
 
 ### Experimental GGML backend
 
-There is an experimental adapter for Pascal's `qwentts.cpp` runtime. The
-current Torch/CUDA-graph backend remains the default; GGML is opt-in and
-uses a separate native wheel package so the main install path stays simple.
+There is an experimental adapter for Pascal's `qwentts.cpp` runtime. The CLI
+selects Torch when CUDA is available and GGML otherwise. On Apple Silicon,
+the native GGML wheel is included in the default install. On other platforms,
+install the `ggml` extra to get it. Use `--backend` to choose one explicitly.
 
 ```bash
 pip install "faster-qwen3-tts[ggml]"
@@ -42,25 +51,27 @@ faster-qwen3-tts --backend ggml --quant BF16 design \
   --output out.wav
 ```
 
-The extra installs `qwentts-cpp-python>=0.3.1` from PyPI. That default wheel is
-CUDA 12.8. For CUDA 13 / DGX Spark, CUDA 12.4 targets, or Ubuntu 22.04 / older
-Linux hosts that need a `manylinux_2_35` wheel, install the matching wrapper
-wheel from the Hugging Face wheelhouse before installing the extra:
+The extra requires `qwentts-cpp-python>=0.4.1`. The PyPI release provides a
+Metal wheel for macOS 14+ with native Apple Silicon Python and CUDA 12.8
+wheels for supported Linux hosts. Pip selects the matching wheel. No local
+native build or `--qwentts-lib` path is needed on a supported Mac. For other
+Linux runtimes, install the matching wrapper wheel from the Hugging Face
+wheelhouse before installing the extra:
 
 ```bash
 # Ubuntu 22.04 / older Linux with CUDA 12.8
-pip install "qwentts-cpp-python==0.3.1+cu128" \
+pip install "qwentts-cpp-python==0.4.1+cu128" \
   -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/tree/main/whl/cu128
 
 # CUDA 13 / DGX Spark
-pip install "qwentts-cpp-python==0.3.1+cu130" \
+pip install "qwentts-cpp-python==0.4.1+cu130" \
   -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/tree/main/whl/cu130
 
 pip install "faster-qwen3-tts[ggml]"
 ```
 
 See [`docs/ggml-backend.md`](docs/ggml-backend.md) for the native wrapper
-package and wheel selection details.
+package and installation details.
 
 The GGML backend caches raw reference audio as qwentts.cpp `.spk` speaker
 latents plus `.rvq` acoustic latents after the first clone request. You can also

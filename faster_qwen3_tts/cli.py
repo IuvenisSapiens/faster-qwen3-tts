@@ -12,12 +12,19 @@ import torch
 from faster_qwen3_tts import FasterQwen3TTS
 
 
+def _resolve_backend(backend: str) -> str:
+    if backend == "auto":
+        return "torch" if torch.cuda.is_available() else "ggml"
+    return backend
+
+
 def _load_model(args):
     model_id = args.model
     device = args.device
     dtype = args.dtype
 
-    if args.backend == "ggml":
+    backend = _resolve_backend(args.backend)
+    if backend == "ggml":
         return FasterQwen3TTS.from_pretrained(
             model_id,
             backend="ggml",
@@ -354,7 +361,12 @@ def build_parser():
     p = argparse.ArgumentParser(prog="faster-qwen3-tts", description="FasterQwen3TTS CLI")
     p.add_argument("--device", default="cuda", help="Device (cuda or cpu)")
     p.add_argument("--dtype", default="bf16", choices=["bf16", "fp16", "fp32"], help="Model dtype")
-    p.add_argument("--backend", default="torch", choices=["torch", "ggml"], help="Inference backend")
+    p.add_argument(
+        "--backend",
+        default="auto",
+        choices=["auto", "torch", "ggml"],
+        help="Inference backend (auto: Torch with CUDA, otherwise GGML)",
+    )
     p.add_argument("--quant", default="BF16", help="GGUF quant for --backend ggml (BF16, Q8_0, Q4_K_M, F32)")
     p.add_argument("--gguf-model", help="Local qwentts.cpp talker GGUF path")
     p.add_argument("--gguf-codec", help="Local qwentts.cpp codec GGUF path")
