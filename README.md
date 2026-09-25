@@ -31,9 +31,10 @@ pip install "torch==2.5.1" "torchaudio==2.5.1" --index-url https://download.pyto
 
 ### Experimental GGML backend
 
-There is an experimental adapter for Pascal's `qwentts.cpp` runtime. The
-current Torch/CUDA-graph backend remains the default; GGML is opt-in and
-uses a separate native wheel package so the main install path stays simple.
+There is an experimental adapter for Pascal's `qwentts.cpp` runtime. The CLI
+selects Torch when CUDA is available and GGML otherwise. GGML requires its
+separate native wheel, installed by the `ggml` extra. Use `--backend` to choose
+one explicitly.
 
 ```bash
 pip install "faster-qwen3-tts[ggml]"
