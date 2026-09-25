@@ -24,7 +24,7 @@ The main package stays installable without native binaries:
 pip install faster-qwen3-tts
 ```
 
-The GGML backend is opt-in and requires `qwentts-cpp-python>=0.4.0`. The
+The GGML backend is opt-in and requires `qwentts-cpp-python>=0.4.1`. The
 current PyPI release, 0.4.1, provides a Metal wheel for macOS 14+ with native
 Apple Silicon Python and CUDA 12.8 wheels for supported Linux hosts:
 
@@ -51,40 +51,28 @@ GGML_BACKEND=MTL0 faster-qwen3-tts \
   --text "Hello from Metal." --output metal-smoke.wav
 ```
 
-Install a backend-specific wrapper wheel first when the PyPI CUDA 12.8 wheel is
-not the right runtime for a Linux machine, then install this package. Use
-the Hugging Face `+cu128` wheel for Ubuntu 22.04 / older Linux hosts that need
-the `manylinux_2_35` CUDA 12.8 build.
+For CUDA 13 / DGX Spark, CUDA 12.4, CPU-only Linux, or older Linux hosts
+whose glibc cannot use the PyPI wheel, use a backend-specific wrapper build
+with version 0.4.1 or newer. The available Hugging Face backend-specific
+wheels are older and do not satisfy this package's GGML extra.
 
-```bash
-# Ubuntu 22.04 / older Linux with CUDA 12.8
-pip install "qwentts-cpp-python==0.4.0+cu128" \
-  -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/tree/main/whl/cu128
-
-# CUDA 13 / DGX Spark
-pip install "qwentts-cpp-python==0.4.0+cu130" \
-  -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/tree/main/whl/cu130
-
-pip install "faster-qwen3-tts[ggml]"
-```
-
-The same wheel index also has `0.4.0+cu124`, `0.4.0+cu128`, and `0.4.0+cpu`
-variants.
-
-For local wrapper development, clone the wrapper repo beside this checkout and
-install it in editable mode:
+For a local build, clone the wrapper repo beside this checkout and use a
+version 0.4.1 or newer:
 
 ```bash
 git clone https://github.com/andimarafioti/qwentts-cpp-python ../qwentts-cpp-python
-pip install -e ../qwentts-cpp-python
+cd ../qwentts-cpp-python
+git checkout v0.4.1
 ```
 
-Development build with local native libraries:
+Build with the CUDA toolkit installed on the target Linux machine. Use
+`--backend cpu` instead for a CPU-only build:
 
 ```bash
-cd ../qwentts-cpp-python
-python scripts/build_native.py --source /path/to/qwentts.cpp --backend cuda --clean
-pip install -e .
+python scripts/build_native.py --backend cuda --clean
+python -m pip install .
+cd ../faster-qwen3-tts
+python -m pip install ".[ggml]"
 ```
 
 ## Python Usage
@@ -203,29 +191,10 @@ The legacy CUDA-graph-only benchmarks still run with `./benchmark.sh`.
 `qwentts-cpp-python==0.4.1` is published on PyPI with Linux CUDA 12.8 and
 macOS 14+ Apple Silicon Metal wheels. Pip selects the matching platform wheel
 for `pip install "faster-qwen3-tts[ggml]"`.
-Additional local-version wheels are hosted on Hugging Face Hub:
 
-```bash
-pip install "qwentts-cpp-python==0.4.0+cpu" \
-  -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/tree/main/whl/cpu
-
-pip install "qwentts-cpp-python==0.4.0+cu124" \
-  -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/tree/main/whl/cu124
-
-pip install "qwentts-cpp-python==0.4.0+cu128" \
-  -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/tree/main/whl/cu128
-
-pip install "qwentts-cpp-python==0.4.0+cu130" \
-  -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/tree/main/whl/cu130
-```
-
-Hugging Face file hosting is used as a `--find-links` wheelhouse rather than a
-PyTorch-style package index. For CUDA 13 / DGX Spark, install the `+cu130`
-wheel before installing `faster-qwen3-tts[ggml]`. For Ubuntu 22.04 / older
-Linux hosts, install `0.4.0+cu128` from the Hugging Face wheelhouse so pip can
-select the `manylinux_2_35` CUDA 12.8 wheel. The earlier `0.4.0+metal`
-wheel is also available there, while macOS users can install 0.4.1 directly
-from PyPI.
+The public Linux PyPI wheels use `manylinux_2_39`. Other Linux targets need a
+wrapper build with version 0.4.1 or newer, as shown above, or a compatible
+backend-specific wheel when one is published.
 
 For publishing new wrapper wheels, use the manual GitHub Actions workflow:
 
