@@ -448,3 +448,40 @@ def test_cli_parses_qwentts_runtime_flags():
     assert args.qwentts_use_fa is False
     assert args.qwentts_clamp_fp16 is True
     assert args.qwentts_ref_cache_dir == ".cache/refs"
+
+
+def test_cli_defaults_to_ggml_without_cuda(monkeypatch):
+    from faster_qwen3_tts import cli
+
+    monkeypatch.setattr(cli.torch.cuda, "is_available", lambda: False)
+    calls = []
+    monkeypatch.setattr(cli.FasterQwen3TTS, "from_pretrained", lambda *a, **kw: calls.append((a, kw)))
+    args = cli.build_parser().parse_args([
+        "custom", "--model", "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
+        "--speaker", "aiden", "--text", "Hello", "--output", "out.wav",
+    ])
+
+    cli._load_model(args)
+
+    assert calls[0][1]["backend"] == "ggml"
+
+
+def test_cli_keeps_torch_default_with_cuda_and_explicit_torch_without_it(monkeypatch):
+    from faster_qwen3_tts import cli
+
+    calls = []
+    monkeypatch.setattr(cli.FasterQwen3TTS, "from_pretrained", lambda *a, **kw: calls.append((a, kw)))
+    command = [
+        "custom", "--model", "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
+        "--speaker", "aiden", "--text", "Hello", "--output", "out.wav",
+    ]
+
+    monkeypatch.setattr(cli.torch.cuda, "is_available", lambda: True)
+    cli._load_model(cli.build_parser().parse_args(command))
+    assert calls[-1][1]["device"] == "cuda"
+    assert "backend" not in calls[-1][1]
+
+    monkeypatch.setattr(cli.torch.cuda, "is_available", lambda: False)
+    cli._load_model(cli.build_parser().parse_args(["--backend", "torch", *command]))
+    assert calls[-1][1]["device"] == "cuda"
+    assert "backend" not in calls[-1][1]

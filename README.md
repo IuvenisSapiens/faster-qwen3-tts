@@ -1,18 +1,22 @@
 # Faster Qwen3-TTS
 
 Real-time Qwen3-TTS inference with streaming and non-streaming generation. The
-default Torch backend uses `torch.cuda.CUDAGraph`; the optional GGML backend
-supports CUDA and Apple Silicon Metal.
+Torch backend uses `torch.cuda.CUDAGraph`; the GGML backend supports CUDA and
+Apple Silicon Metal.
 
 ## Install
 
-Requires: Python 3.10+ and PyTorch 2.5.1+. The default Torch backend requires
-an NVIDIA GPU with CUDA. The optional GGML backend also runs on Apple Silicon
+Requires: Python 3.10+ and PyTorch 2.5.1+. The Torch backend requires
+an NVIDIA GPU with CUDA. The GGML backend also runs on Apple Silicon
 Macs with macOS 14 or newer.
 
 ```bash
 pip install faster-qwen3-tts
 ```
+
+On native Apple Silicon Python, this also installs the GGML Metal runtime and
+the CLI selects it automatically. Intel Macs and Rosetta Python are not
+supported by the Metal wheel.
 
 The default install uses `qwen-tts-hf`, a temporary PyPI compatibility build
 of Qwen3-TTS with Transformers 5 support. It provides the same `qwen_tts`
@@ -31,9 +35,10 @@ pip install "torch==2.5.1" "torchaudio==2.5.1" --index-url https://download.pyto
 
 ### Experimental GGML backend
 
-There is an experimental adapter for Pascal's `qwentts.cpp` runtime. The
-current Torch/CUDA-graph backend remains the default; GGML is opt-in and
-uses a separate native wheel package so the main install path stays simple.
+There is an experimental adapter for Pascal's `qwentts.cpp` runtime. The CLI
+selects Torch when CUDA is available and GGML otherwise. On Apple Silicon,
+the native GGML wheel is included in the default install. On other platforms,
+install the `ggml` extra to get it. Use `--backend` to choose one explicitly.
 
 ```bash
 pip install "faster-qwen3-tts[ggml]"
