@@ -52,9 +52,22 @@ GGML_BACKEND=MTL0 faster-qwen3-tts \
 ```
 
 For CUDA 13 / DGX Spark, CUDA 12.4, CPU-only Linux, or older Linux hosts
-whose glibc cannot use the PyPI wheel, use a backend-specific wrapper build
-with version 0.4.1 or newer. The available Hugging Face backend-specific
-wheels are older and do not satisfy this package's GGML extra.
+whose glibc cannot use the PyPI wheel, install a backend-specific wrapper
+wheel with version 0.4.1 or newer before installing the extra:
+
+```bash
+# Ubuntu 22.04 / older Linux with CUDA 12.8
+pip install "qwentts-cpp-python==0.4.1+cu128" \
+  -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/tree/main/whl/cu128
+
+# CUDA 13 / DGX Spark
+pip install "qwentts-cpp-python==0.4.1+cu130" \
+  -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/tree/main/whl/cu130
+
+pip install "faster-qwen3-tts[ggml]"
+```
+
+The wheelhouse also provides `0.4.1+cu124` and `0.4.1+cpu` variants.
 
 For a local build, clone the wrapper repo beside this checkout and use a
 version 0.4.1 or newer:
@@ -192,9 +205,28 @@ The legacy CUDA-graph-only benchmarks still run with `./benchmark.sh`.
 macOS 14+ Apple Silicon Metal wheels. Pip selects the matching platform wheel
 for `pip install "faster-qwen3-tts[ggml]"`.
 
-The public Linux PyPI wheels use `manylinux_2_39`. Other Linux targets need a
-wrapper build with version 0.4.1 or newer, as shown above, or a compatible
-backend-specific wheel when one is published.
+The public Linux PyPI wheels use `manylinux_2_39`. Additional local-version
+wheels are hosted on Hugging Face Hub:
+
+```bash
+pip install "qwentts-cpp-python==0.4.1+cpu" \
+  -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/tree/main/whl/cpu
+
+pip install "qwentts-cpp-python==0.4.1+cu124" \
+  -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/tree/main/whl/cu124
+
+pip install "qwentts-cpp-python==0.4.1+cu128" \
+  -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/tree/main/whl/cu128
+
+pip install "qwentts-cpp-python==0.4.1+cu130" \
+  -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/tree/main/whl/cu130
+```
+
+Hugging Face file hosting is used as a `--find-links` wheelhouse. For CUDA 13 /
+DGX Spark, install the `+cu130` wheel first. For Ubuntu 22.04 / older Linux
+hosts, install `+cu128` from the wheelhouse so pip can select the
+`manylinux_2_35` CUDA 12.8 build. If no wheel matches your platform, build
+version 0.4.1 or newer from source as shown above.
 
 For publishing new wrapper wheels, use the manual GitHub Actions workflow:
 

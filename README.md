@@ -50,8 +50,20 @@ The extra requires `qwentts-cpp-python>=0.4.1`. The PyPI release provides a
 Metal wheel for macOS 14+ with native Apple Silicon Python and CUDA 12.8
 wheels for supported Linux hosts. Pip selects the matching wheel. No local
 native build or `--qwentts-lib` path is needed on a supported Mac. For other
-Linux runtimes, build a compatible wrapper from source as described in the
-GGML backend guide.
+Linux runtimes, install the matching wrapper wheel from the Hugging Face
+wheelhouse before installing the extra:
+
+```bash
+# Ubuntu 22.04 / older Linux with CUDA 12.8
+pip install "qwentts-cpp-python==0.4.1+cu128" \
+  -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/tree/main/whl/cu128
+
+# CUDA 13 / DGX Spark
+pip install "qwentts-cpp-python==0.4.1+cu130" \
+  -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/tree/main/whl/cu130
+
+pip install "faster-qwen3-tts[ggml]"
+```
 
 See [`docs/ggml-backend.md`](docs/ggml-backend.md) for the native wrapper
 package and installation details.
