@@ -121,6 +121,7 @@ class FasterQwen3TTS:
         qwentts_ref_cache_dir: Optional[Union[str, Path]] = None,
         cache_dir: Optional[Union[str, Path]] = None,
         local_files_only: bool = False,
+        qwentts_log_level: str = "warning",
     ):
         """
         Load Qwen3-TTS model and prepare CUDA graphs.
@@ -139,6 +140,9 @@ class FasterQwen3TTS:
             qwentts_library_path: Optional explicit path to libqwen.
             qwentts_use_fa: Whether qwentts.cpp should use flash-attention kernels.
             qwentts_clamp_fp16: Whether qwentts.cpp should clamp fp16 operations.
+            qwentts_log_level: Native logging level: "warning" (default), "error",
+                "info", or "debug". Warnings and errors stay visible by default.
+                This setting is process-wide; the most recent GGML load wins.
             qwentts_ref_cache_dir: Optional cache directory for GGML voice-clone
                 `.spk` / `.rvq` references extracted from raw reference audio.
             
@@ -161,6 +165,7 @@ class FasterQwen3TTS:
                     library_path=qwentts_library_path,
                     use_fa=qwentts_use_fa,
                     clamp_fp16=qwentts_clamp_fp16,
+                    log_level=qwentts_log_level,
                     voice_ref_cache_dir=qwentts_ref_cache_dir,
                 )
 
@@ -172,6 +177,7 @@ class FasterQwen3TTS:
                 library_path=qwentts_library_path,
                 use_fa=qwentts_use_fa,
                 clamp_fp16=qwentts_clamp_fp16,
+                log_level=qwentts_log_level,
                 voice_ref_cache_dir=qwentts_ref_cache_dir,
             )
 

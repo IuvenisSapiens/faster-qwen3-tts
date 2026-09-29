@@ -129,6 +129,7 @@ class GGMLQwen3TTS:
         library_path: Optional[Union[str, Path]] = None,
         use_fa: bool = True,
         clamp_fp16: bool = False,
+        log_level: str = "warning",
         voice_ref_cache_dir: Optional[Union[str, Path]] = None,
     ) -> "GGMLQwen3TTS":
         QwenTTS, _load_speaker_embedding = _require_qwentts_cpp()
@@ -138,6 +139,7 @@ class GGMLQwen3TTS:
             library_path=library_path,
             use_fa=use_fa,
             clamp_fp16=clamp_fp16,
+            log_level=log_level,
         )
         model_identity = f"gguf:{_path_identity(talker_path)}|{_path_identity(codec_path)}"
         return cls(runtime, model_identity=model_identity, voice_ref_cache_dir=voice_ref_cache_dir)
@@ -153,6 +155,7 @@ class GGMLQwen3TTS:
         library_path: Optional[Union[str, Path]] = None,
         use_fa: bool = True,
         clamp_fp16: bool = False,
+        log_level: str = "warning",
         voice_ref_cache_dir: Optional[Union[str, Path]] = None,
     ) -> "GGMLQwen3TTS":
         QwenTTS, _load_speaker_embedding = _require_qwentts_cpp()
@@ -164,6 +167,7 @@ class GGMLQwen3TTS:
             library_path=library_path,
             use_fa=use_fa,
             clamp_fp16=clamp_fp16,
+            log_level=log_level,
         )
         return cls(
             runtime,

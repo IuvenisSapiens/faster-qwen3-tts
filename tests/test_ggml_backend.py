@@ -313,7 +313,8 @@ def test_ggml_public_warmup_is_a_no_op():
     assert runtime.calls == []
 
 
-def test_adapter_from_pretrained_forwards_qwentts_runtime_flags(monkeypatch, qwentts_cpp_stub):
+@pytest.mark.parametrize("log_level", ["warning", "debug"])
+def test_adapter_from_pretrained_forwards_qwentts_runtime_flags(monkeypatch, qwentts_cpp_stub, log_level):
     captured = {}
 
     class FakeQwenTTS:
@@ -333,6 +334,7 @@ def test_adapter_from_pretrained_forwards_qwentts_runtime_flags(monkeypatch, qwe
         library_path="libqwen.so",
         use_fa=False,
         clamp_fp16=True,
+        log_level=log_level,
     )
 
     assert isinstance(model, GGMLQwen3TTS)
@@ -344,10 +346,12 @@ def test_adapter_from_pretrained_forwards_qwentts_runtime_flags(monkeypatch, qwe
         "library_path": "libqwen.so",
         "use_fa": False,
         "clamp_fp16": True,
+        "log_level": log_level,
     }
 
 
-def test_public_from_pretrained_forwards_qwentts_runtime_flags(monkeypatch):
+@pytest.mark.parametrize("log_level", ["warning", "debug"])
+def test_public_from_pretrained_forwards_qwentts_runtime_flags(monkeypatch, log_level):
     captured = {}
     sentinel = object()
 
@@ -371,6 +375,7 @@ def test_public_from_pretrained_forwards_qwentts_runtime_flags(monkeypatch):
         qwentts_library_path="libqwen.so",
         qwentts_use_fa=False,
         qwentts_clamp_fp16=True,
+        qwentts_log_level=log_level,
         qwentts_ref_cache_dir=".cache/refs",
     )
 
@@ -383,11 +388,13 @@ def test_public_from_pretrained_forwards_qwentts_runtime_flags(monkeypatch):
         "library_path": "libqwen.so",
         "use_fa": False,
         "clamp_fp16": True,
+        "log_level": log_level,
         "voice_ref_cache_dir": ".cache/refs",
     }
 
 
-def test_public_from_gguf_forwards_qwentts_runtime_flags(monkeypatch):
+@pytest.mark.parametrize("log_level", ["warning", "debug"])
+def test_public_from_gguf_forwards_qwentts_runtime_flags(monkeypatch, log_level):
     captured = {}
     sentinel = object()
 
@@ -410,6 +417,7 @@ def test_public_from_gguf_forwards_qwentts_runtime_flags(monkeypatch):
         qwentts_library_path="libqwen.so",
         qwentts_use_fa=False,
         qwentts_clamp_fp16=True,
+        qwentts_log_level=log_level,
         qwentts_ref_cache_dir=".cache/refs",
     )
 
@@ -419,6 +427,7 @@ def test_public_from_gguf_forwards_qwentts_runtime_flags(monkeypatch):
         "library_path": "libqwen.so",
         "use_fa": False,
         "clamp_fp16": True,
+        "log_level": log_level,
         "voice_ref_cache_dir": ".cache/refs",
     }
 
@@ -489,71 +498,84 @@ def test_cli_keeps_torch_default_with_cuda_and_explicit_torch_without_it(monkeyp
 
 
 @pytest.mark.parametrize("verbose", [False, True])
-def test_cli_native_diagnostics_are_opt_in(monkeypatch, capfd, verbose):
+def test_cli_native_logging_keeps_stderr_visible(monkeypatch, capfd, verbose):
     from faster_qwen3_tts import cli
 
-    def fake_custom(_args):
-        os.write(2, b"native diagnostic\n")
+    captured = {}
+
+    def fake_load(*args, **kwargs):
+        captured.update(kwargs)
+        os.write(2, b"download progress\n")
+        return object()
+
+    def fake_custom(args):
+        cli._load_model(args)
+        os.write(2, b"native warning\n")
         print("Wrote out.wav")
 
     monkeypatch.setattr(cli.torch.cuda, "is_available", lambda: False)
+    monkeypatch.setattr(cli.FasterQwen3TTS, "from_pretrained", fake_load)
     monkeypatch.setattr(cli, "cmd_custom", fake_custom)
-    command = [
-        "custom", "--model", "model", "--speaker", "aiden",
-        "--text", "Hello", "--output", "out.wav",
-    ]
     monkeypatch.setattr(cli.sys, "argv", [
         "faster-qwen3-tts", *(["--verbose"] if verbose else []),
-        "--gguf-model", "talker.gguf", "--gguf-codec", "codec.gguf", *command,
+        "custom", "--model", "model", "--speaker", "aiden",
+        "--text", "Hello", "--output", "out.wav",
     ])
 
     cli.main()
 
     out, err = capfd.readouterr()
     assert out == "Wrote out.wav\n"
-    assert ("native diagnostic" in err) is verbose
+    assert err == "download progress\nnative warning\n"
+    assert captured["qwentts_log_level"] == ("debug" if verbose else "warning")
 
 
-def test_cli_keeps_model_download_progress_visible(monkeypatch, capfd):
+def test_cli_keeps_errors_visible(monkeypatch, capfd):
     from faster_qwen3_tts import cli
 
-    def fake_resolve(model_id, *, quant):
-        assert model_id == "model"
-        assert quant == "Q4_K_M"
-        os.write(2, b"download progress\n")
-
     def fake_custom(_args):
-        os.write(2, b"native diagnostic\n")
-        print("Wrote out.wav")
+        os.write(2, b"native error\n")
+        raise RuntimeError("synthesis failed")
 
-    fake_package = types.ModuleType("qwentts_cpp")
-    fake_package.__path__ = []
-    fake_models = types.ModuleType("qwentts_cpp.models")
-    fake_models.resolve_gguf_paths = fake_resolve
-    monkeypatch.setitem(sys.modules, "qwentts_cpp", fake_package)
-    monkeypatch.setitem(sys.modules, "qwentts_cpp.models", fake_models)
-    monkeypatch.setattr(cli.torch.cuda, "is_available", lambda: False)
     monkeypatch.setattr(cli, "cmd_custom", fake_custom)
     monkeypatch.setattr(cli.sys, "argv", [
-        "faster-qwen3-tts", "--quant", "Q4_K_M", "custom",
-        "--model", "model", "--speaker", "aiden", "--text", "Hello",
-        "--output", "out.wav",
+        "faster-qwen3-tts", "--backend", "ggml", "custom", "--model", "model",
+        "--speaker", "aiden", "--text", "Hello", "--output", "out.wav",
     ])
 
-    cli.main()
-
-    out, err = capfd.readouterr()
-    assert out == "Wrote out.wav\n"
-    assert err == "download progress\n"
+    with pytest.raises(RuntimeError, match="synthesis failed"):
+        cli.main()
+    assert capfd.readouterr().err == "native error\n"
 
 
-def test_cli_restores_stderr_after_native_failure(capfd):
-    from faster_qwen3_tts.cli import _quiet_native_stderr
+@pytest.mark.parametrize("loader", ["pretrained", "gguf"])
+def test_adapter_defaults_to_warning_logging(qwentts_cpp_stub, loader):
+    captured = {}
 
-    with pytest.raises(RuntimeError):
-        with _quiet_native_stderr():
-            os.write(2, b"native diagnostic\n")
-            raise RuntimeError("synthesis failed")
+    class FakeQwenTTS:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
 
-    os.write(2, b"visible error\n")
-    assert capfd.readouterr().err == "native diagnostic\nvisible error\n"
+        @classmethod
+        def from_pretrained(cls, *args, **kwargs):
+            return cls(**kwargs)
+
+    qwentts_cpp_stub.QwenTTS = FakeQwenTTS
+    if loader == "pretrained":
+        GGMLQwen3TTS.from_pretrained("model")
+    else:
+        GGMLQwen3TTS.from_gguf("talker.gguf", "codec.gguf")
+    assert captured["log_level"] == "warning"
+
+
+@pytest.mark.parametrize("log_level", ["warning", "debug"])
+def test_adapter_from_gguf_forwards_log_level(qwentts_cpp_stub, log_level):
+    captured = {}
+
+    class FakeQwenTTS:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    qwentts_cpp_stub.QwenTTS = FakeQwenTTS
+    GGMLQwen3TTS.from_gguf("talker.gguf", "codec.gguf", log_level=log_level)
+    assert captured["log_level"] == log_level
