@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 """CLI for FasterQwen3TTS."""
 import argparse
-from contextlib import contextmanager
 import os
 import sys
-import tempfile
 import time
 
 import numpy as np
@@ -18,34 +16,6 @@ def _resolve_backend(backend: str) -> str:
     if backend == "auto":
         return "torch" if torch.cuda.is_available() else "ggml"
     return backend
-
-
-@contextmanager
-def _quiet_native_stderr():
-    # qwentts.cpp and GGML write directly to file descriptor 2.
-    with tempfile.TemporaryFile() as sink:
-        saved_stderr = os.dup(2)
-        failed = False
-        try:
-            sys.stderr.flush()
-            os.dup2(sink.fileno(), 2)
-            try:
-                yield
-            except BaseException:
-                failed = True
-                raise
-        finally:
-            sys.stderr.flush()
-            os.dup2(saved_stderr, 2)
-            try:
-                if failed:
-                    sink.seek(0)
-                    while chunk := sink.read(65536):
-                        remaining = memoryview(chunk)
-                        while remaining:
-                            remaining = remaining[os.write(saved_stderr, remaining):]
-            finally:
-                os.close(saved_stderr)
 
 
 def _load_model(args):
@@ -64,6 +34,7 @@ def _load_model(args):
             qwentts_library_path=args.qwentts_lib,
             qwentts_use_fa=args.qwentts_use_fa,
             qwentts_clamp_fp16=args.qwentts_clamp_fp16,
+            qwentts_log_level="debug" if args.verbose else "warning",
             qwentts_ref_cache_dir=args.qwentts_ref_cache_dir,
         )
 
@@ -515,21 +486,7 @@ def build_parser():
 def main():
     parser = build_parser()
     args = parser.parse_args()
-    if _resolve_backend(args.backend) == "ggml" and not args.verbose:
-        if args.gguf_model is None and args.gguf_codec is None:
-            try:
-                from qwentts_cpp.models import resolve_gguf_paths
-            except ImportError as exc:
-                raise ImportError(
-                    "GGML requires qwentts-cpp-python. "
-                    "Install faster-qwen3-tts[ggml] and retry."
-                ) from exc
-
-            resolve_gguf_paths(args.model, quant=args.quant)
-        with _quiet_native_stderr():
-            args.fn(args)
-    else:
-        args.fn(args)
+    args.fn(args)
 
 
 if __name__ == "__main__":
