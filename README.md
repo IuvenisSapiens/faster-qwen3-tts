@@ -57,22 +57,21 @@ faster-qwen3-tts --backend ggml --quant BF16 design \
   --output out.wav
 ```
 
-The extra requires `qwentts-cpp-python>=0.4.2`. The PyPI release provides a
+The extra requires `qwentts-cpp-python>=0.5.0`. The PyPI release provides a
 Metal wheel for macOS 14+ with native Apple Silicon Python and CUDA 12.8
 wheels for supported Linux hosts. Pip selects the matching wheel. No local
 native build or `--qwentts-lib` path is needed on a supported Mac. For other
 Linux runtimes, install the matching wrapper wheel from the Hugging Face
-wheelhouse before installing the extra. The commands below require 0.4.2
-wheels to be published there; if unavailable, build 0.4.2 or newer from source
-as described in `docs/ggml-backend.md`:
+wheelhouse before installing the extra. The 0.5.0 wheel variants use the same
+ABI v5 as the PyPI release:
 
 ```bash
 # Ubuntu 22.04 / older Linux with CUDA 12.8
-pip install "qwentts-cpp-python==0.4.2+cu128" \
+pip install "qwentts-cpp-python==0.5.0+cu128" \
   -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/tree/main/whl/cu128
 
 # CUDA 13 / DGX Spark
-pip install "qwentts-cpp-python==0.4.2+cu130" \
+pip install "qwentts-cpp-python==0.5.0+cu130" \
   -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/tree/main/whl/cu130
 
 pip install "faster-qwen3-tts[ggml]"

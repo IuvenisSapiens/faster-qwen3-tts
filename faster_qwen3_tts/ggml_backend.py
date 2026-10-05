@@ -385,7 +385,7 @@ class GGMLQwen3TTS:
         extract = getattr(self.runtime, "extract_voice_ref", None)
         if extract is None:
             raise NotImplementedError(
-                "Raw ref_audio caching requires qwentts-cpp-python >= 0.3.0 "
+                "Raw ref_audio caching requires qwentts-cpp-python >= 0.5.0 "
                 "with qt_extract_voice_ref support."
             )
 
@@ -507,8 +507,8 @@ class GGMLQwen3TTS:
         )
         if load_rvq_codes is None:
             raise NotImplementedError(
-                "Cached RVQ references require qwentts-cpp-python >= 0.3.0 "
-                "and qwentts.cpp ABI v2."
+                "Cached RVQ references require qwentts-cpp-python >= 0.5.0 "
+                "and qwentts.cpp ABI v5."
             )
         return load_rvq_codes(ref_rvq)
 
