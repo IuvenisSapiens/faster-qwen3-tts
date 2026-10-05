@@ -25,7 +25,7 @@ pip install faster-qwen3-tts
 ```
 
 On other platforms, GGML is opt-in through the `ggml` extra. Both paths require
-`qwentts-cpp-python>=0.4.2`. PyPI version 0.4.2 provides a Metal wheel for
+`qwentts-cpp-python>=0.5.0`. PyPI version 0.5.0 provides a Metal wheel for
 macOS 14+ with native Apple Silicon Python and CUDA 12.8 wheels for supported
 Linux hosts:
 
@@ -37,6 +37,11 @@ On Apple Silicon, the wheel includes `libqwen` and its Metal dependencies; no
 Homebrew libraries, local native build, or `qwentts_library_path` are needed.
 The Torch backend still requires CUDA. Intel Macs and macOS older than 14 are
 not covered by the Metal wheel.
+
+Version 0.5.0 uses qwentts.cpp ABI v5. If you pass an explicit
+`qwentts_library_path`, rebuild that native library using the wrapper
+release's pinned revision; older ABI v2 libraries are incompatible. The
+wrapper checks the native revision before passing C parameter structures.
 
 The GGML adapter passes `log_level="warning"` to the native wrapper before
 model initialization, so Python applications and the CLI hide routine startup
@@ -64,32 +69,30 @@ GGML_BACKEND=MTL0 faster-qwen3-tts \
 
 For CUDA 13 / DGX Spark, CUDA 12.4, CPU-only Linux, or older Linux hosts
 whose glibc cannot use the PyPI wheel, install a backend-specific wrapper
-wheel with version 0.4.2 or newer before installing the extra. These commands
-require the matching 0.4.2 wheel to be published; otherwise use the local build
-instructions below:
+wheel with version 0.5.0 or newer before installing the extra:
 
 ```bash
 # Ubuntu 22.04 / older Linux with CUDA 12.8
-pip install "qwentts-cpp-python==0.4.2+cu128" \
+pip install "qwentts-cpp-python==0.5.0+cu128" \
   -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/tree/main/whl/cu128
 
 # CUDA 13 / DGX Spark
-pip install "qwentts-cpp-python==0.4.2+cu130" \
+pip install "qwentts-cpp-python==0.5.0+cu130" \
   -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/tree/main/whl/cu130
 
 pip install "faster-qwen3-tts[ggml]"
 ```
 
 The CUDA 12.4 and CPU flavors are `+cu124` and `+cpu`; they also require
-wrapper version 0.4.2 or newer.
+wrapper version 0.5.0 or newer.
 
 For a local build, clone the wrapper repo beside this checkout and use a
-version 0.4.2 or newer:
+version 0.5.0 or newer:
 
 ```bash
 git clone https://github.com/andimarafioti/qwentts-cpp-python ../qwentts-cpp-python
 cd ../qwentts-cpp-python
-git checkout v0.4.2
+git checkout v0.5.0
 ```
 
 Build with the CUDA toolkit installed on the target Linux machine. Use
@@ -215,25 +218,24 @@ The legacy CUDA-graph-only benchmarks still run with `./benchmark.sh`.
 
 ## Wheel Distribution
 
-`qwentts-cpp-python==0.4.2` is published on PyPI with Linux CUDA 12.8 and
+`qwentts-cpp-python==0.5.0` is published on PyPI with Linux CUDA 12.8 and
 macOS 14+ Apple Silicon Metal wheels. Pip selects the matching platform wheel
 for `pip install "faster-qwen3-tts[ggml]"`.
 
 The public Linux PyPI wheels use `manylinux_2_39`. Additional local-version
-wheels are hosted on Hugging Face Hub. Use the following commands once the
-matching 0.4.2 wheels are available, or build from source if unavailable:
+wheels are hosted on Hugging Face Hub:
 
 ```bash
-pip install "qwentts-cpp-python==0.4.2+cpu" \
+pip install "qwentts-cpp-python==0.5.0+cpu" \
   -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/tree/main/whl/cpu
 
-pip install "qwentts-cpp-python==0.4.2+cu124" \
+pip install "qwentts-cpp-python==0.5.0+cu124" \
   -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/tree/main/whl/cu124
 
-pip install "qwentts-cpp-python==0.4.2+cu128" \
+pip install "qwentts-cpp-python==0.5.0+cu128" \
   -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/tree/main/whl/cu128
 
-pip install "qwentts-cpp-python==0.4.2+cu130" \
+pip install "qwentts-cpp-python==0.5.0+cu130" \
   -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/tree/main/whl/cu130
 ```
 
@@ -241,7 +243,7 @@ Hugging Face file hosting is used as a `--find-links` wheelhouse. For CUDA 13 /
 DGX Spark, install the `+cu130` wheel first. For Ubuntu 22.04 / older Linux
 hosts, install `+cu128` from the wheelhouse so pip can select the
 `manylinux_2_35` CUDA 12.8 build. If no wheel matches your platform, build
-version 0.4.2 or newer from source as shown above.
+version 0.5.0 or newer from source as shown above.
 
 For publishing new wrapper wheels, use the manual GitHub Actions workflow:
 

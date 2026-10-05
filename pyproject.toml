@@ -8,7 +8,7 @@ include = ["faster_qwen3_tts*"]
 
 [project]
 name = "faster-qwen3-tts"
-version = "0.5.3"
+version = "0.5.4"
 description = "Real-time Qwen3-TTS inference with CUDA graphs or GGML"
 readme = "README.md"
 license = "MIT"
@@ -33,12 +33,12 @@ dependencies = [
     "numpy",
     "soundfile",
     "huggingface-hub>=1.5.0,<2.0",
-    "qwentts-cpp-python>=0.4.2; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "qwentts-cpp-python>=0.5.0; sys_platform == 'darwin' and platform_machine == 'arm64'",
 ]
 
 [project.optional-dependencies]
 ggml = [
-    "qwentts-cpp-python>=0.4.2",
+    "qwentts-cpp-python>=0.5.0",
 ]
 demo = [
     "fastapi>=0.100.0",
