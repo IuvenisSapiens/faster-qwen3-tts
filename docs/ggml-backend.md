@@ -35,8 +35,8 @@ pip install "faster-qwen3-tts[ggml]"
 
 On Apple Silicon, the wheel includes `libqwen` and its Metal dependencies; no
 Homebrew libraries, local native build, or `qwentts_library_path` are needed.
-The Torch backend still requires CUDA. Intel Macs and macOS older than 14 are
-not covered by the Metal wheel.
+The Torch backend requires NVIDIA CUDA or AMD ROCm. Intel Macs and macOS
+older than 14 are not covered by the Metal wheel.
 
 Version 0.5.0 uses qwentts.cpp ABI v5. If you pass an explicit
 `qwentts_library_path`, rebuild that native library using the wrapper
@@ -104,6 +104,51 @@ python -m pip install .
 cd ../faster-qwen3-tts
 python -m pip install ".[ggml]"
 ```
+
+### AMD GPUs (HIP)
+
+The GGML adapter was validated on AMD Instinct MI300X VF (`gfx942`) with
+ROCm 7.2.4, `qwentts-cpp-python==0.5.0`, and the pinned qwentts.cpp revision
+`6fae92914045cd83364d2845ceaa0f7969727319` (ABI v5). BF16 and Q4_K_M worked
+for full and streaming generation with 0.6B/1.7B Base, 1.7B CustomVoice, and
+1.7B VoiceDesign. Other AMD GPUs have not been tested.
+
+The published Linux wheels are CUDA builds. AMD requires a source-built HIP
+library and an explicit `--qwentts-lib` path. Install `faster-qwen3-tts` first
+as described in the [README](../README.md#amd-gpus-rocm), in a ROCm development
+environment with HIP, hipBLAS, and rocBLAS available. The ROCm PyTorch image
+listed there was tested. Then build the native runtime:
+
+```bash
+pip install cmake ninja
+git clone --branch v0.5.0 https://github.com/andimarafioti/qwentts-cpp-python
+cd qwentts-cpp-python
+git clone --no-checkout https://github.com/ServeurpersoCom/qwentts.cpp third_party/qwentts.cpp
+git -C third_party/qwentts.cpp checkout 6fae92914045cd83364d2845ceaa0f7969727319
+git -C third_party/qwentts.cpp submodule update --init --recursive
+
+cmake -S third_party/qwentts.cpp -B build/hip -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release -DQWEN_SHARED=ON -DBUILD_SHARED_LIBS=ON \
+  -DGGML_HIP=ON -DGGML_HIP_GRAPHS=ON \
+  -DCMAKE_HIP_ARCHITECTURES=gfx942 \
+  -DCMAKE_HIP_COMPILER=/opt/rocm/llvm/bin/clang++ \
+  -DCMAKE_PREFIX_PATH=/opt/rocm \
+  -DGGML_CUDA=OFF -DGGML_METAL=OFF -DGGML_BLAS=OFF -DGGML_NATIVE=OFF
+cmake --build build/hip --target qwen -j 8
+pip install --no-deps -e .
+
+export LD_LIBRARY_PATH="$PWD/build/hip:${LD_LIBRARY_PATH:-}"
+GGML_BACKEND=ROCm0 faster-qwen3-tts --backend ggml --quant BF16 \
+  --qwentts-lib "$PWD/build/hip/libqwen.so" design \
+  --model Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign \
+  --instruct "A warm, calm narrator." \
+  --text "Hello from AMD." --language English --output amd.wav
+```
+
+Keep the native build directory: the adapter loads `libqwen.so` and
+its sibling GGML libraries from it. `GGML_BACKEND=ROCm0` forces the AMD device
+and fails if it is unavailable, avoiding a CPU-only result. For Python, pass
+`qwentts_library_path="/path/to/build/hip/libqwen.so"` with `backend="ggml"`.
 
 ## Python Usage
 

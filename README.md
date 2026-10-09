@@ -1,14 +1,15 @@
 # Faster Qwen3-TTS
 
 Real-time Qwen3-TTS inference with streaming and non-streaming generation. The
-Torch backend uses `torch.cuda.CUDAGraph`; the GGML backend supports CUDA and
-Apple Silicon Metal.
+Torch backend uses `torch.cuda.CUDAGraph` on NVIDIA CUDA and AMD ROCm. The
+GGML backend supports CUDA, Apple Silicon Metal, and AMD with a source-built
+HIP runtime.
 
 ## Install
 
 Requires: Python 3.10+ and PyTorch 2.5.1+. The Torch backend requires
-an NVIDIA GPU with CUDA. The GGML backend also runs on Apple Silicon
-Macs with macOS 14 or newer.
+an NVIDIA GPU with CUDA or an AMD GPU with ROCm. The GGML backend also runs
+on Apple Silicon Macs with macOS 14 or newer.
 
 ```bash
 pip install faster-qwen3-tts
@@ -32,6 +33,40 @@ the same environment.
 ```bash
 pip install "torch==2.5.1" "torchaudio==2.5.1" --index-url https://download.pytorch.org/whl/cu124
 ```
+
+### AMD GPUs (ROCm)
+
+Both backends have been validated on **AMD Instinct MI300X VF (`gfx942`)**
+with ROCm 7.2.4. Other AMD GPUs have not been tested.
+
+For **Torch**, use a ROCm build of PyTorch. The verified environment was
+PyTorch 2.9.1, `qwen-tts-hf==0.1.1.post1`, and `transformers==5.15.1`, using
+SDPA attention and bfloat16. The tested container image was
+`rocm/pytorch:rocm7.2.4_ubuntu24.04_py3.12_pytorch_release_2.9.1`.
+Inside an environment with ROCm PyTorch already installed:
+
+```bash
+pip install faster-qwen3-tts "transformers==5.15.1"
+python -c 'import torch; assert torch.version.hip and torch.cuda.is_available(); print(torch.cuda.get_device_name(0))'
+```
+
+Keep `backend="torch"` and `device="cuda"` on AMD as well. ROCm PyTorch
+[reuses the `torch.cuda` API and device names](https://docs.pytorch.org/docs/stable/notes/hip.html),
+including the graph APIs used here; no separate `hip` device argument is needed.
+The Transformers pin is required for this verified setup: newer versions
+encountered a `MimiConfig.rope_theta` error during model loading.
+
+For **GGML**, build the pinned native runtime with `GGML_HIP=ON` and select
+`ROCm0`. BF16 and Q4_K_M were tested. The published Linux `qwentts-cpp-python`
+wheels use NVIDIA CUDA and do not provide this AMD runtime; see the
+[GGML HIP build instructions](docs/ggml-backend.md#amd-gpus-hip).
+
+Validation covered streaming and full generation with 0.6B/1.7B Base voice
+cloning (ICL and xvec), 1.7B CustomVoice, and 1.7B VoiceDesign. The Torch suite
+passed 89 of 90 tests; one greedy bfloat16 ICL case reached its token limit
+without emitting EOS. First-use initialization can be much slower than warm
+generation, so warm up with complete utterances before measuring latency and
+time reference extraction separately from generation.
 
 ### Experimental GGML backend
 
